@@ -62,6 +62,29 @@ class FlightComputerNet(FlightComputer):
         return decided
 
 
+    def decide_on_state(self, state):
+
+        acceptations = 0
+        for peer_url in self.peers:
+            try:
+                accept = call_peer(peer_url,'acceptable_state', state=state)
+
+                if accept:
+                    acceptations += 1
+            except NetworkException:
+                pass
+
+        app.logger.info(f"{acceptations} acceptations")
+        decided = acceptations / (len(self.peers) +1) > 0.5
+
+        if decided:
+            for peer_url in self.peers:
+                call_peer(peer_url, 'deliver_state', state=state)
+            self.deliver_state(state)
+
+        return decided
+
+
 flight_computer = FlightComputerNet(readout_state(0))
 
 app = Flask(__name__)
@@ -86,12 +109,26 @@ def deliver_action():
             json.loads(request.form['action']))
         return json.dumps(r)
 
+@app.route("/deliver_state", methods=('PUT',))
+def deliver_state():
+    if request.method == 'PUT':
+        r = flight_computer.deliver_state(json.loads(request.form['state']))
+        return Json.dumps(r)
+
 @app.route("/acceptable_action", methods=('PUT',))
 def acceptable_action():
     if request.method == 'PUT':
         p = json.loads(request.form['action'])
         r = flight_computer.acceptable_action(p)
         return json.dumps(r)
+
+@app.route("/acceptable_state", methods=('PUT',))
+def acceptable_state():
+    if request.method == 'PUT':
+        p = json.loads(request.form['state'])
+        r = flight_computer.acceptable_state(p)
+        return json.dumps(r)
+
 
 
 # https://www.edureka.co/community/30828/how-do-you-add-a-background-thread-to-flask-in-python
