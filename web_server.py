@@ -6,7 +6,7 @@ from server import LogEntry, ServerLog, Server, ServerEncoder
 from starter_code.withoutksp import allocate_flight_computers, commandline_args, readout_state
 
 from starter_code.computers import FlightComputer
-from utils import BASE_URL,call_peer, NetworkException
+from utils import BASE_URL, call_peer, NetworkException
 
 server = Server("one")
 
@@ -77,6 +77,8 @@ if __name__ == "__main__":
     parser.add_argument("--peers", type=int, default=2, help="Total peer number (this server includes)")
     parser.add_argument("--computer", type=str, help="Type fo computer FlightComputer")
     args, _ = parser.parse_known_args()
+
+    assert 5000 <= args.port <= 5000 + args.peers
 
     for i in range(args.peers):
         port = 5000 + i
