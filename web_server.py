@@ -21,6 +21,7 @@ class FlightComputerNet(FlightComputer):
     def add_peer(self, peer_url):
         self.peers.append(peer_url)
 
+
     def decide_on_action(self, action):
 
         # Runnin process outside http req/repl
@@ -33,7 +34,6 @@ class FlightComputerNet(FlightComputer):
         [t.start() for t in calls]
 
         results = [t.join() for t in calls]
-        app.logger.debug(results)
         acceptations = sum(filter(lambda t: t, results))
 
         # This code below explains the code above...
@@ -56,7 +56,7 @@ class FlightComputerNet(FlightComputer):
                 call_peer(peer_url,
                           'deliver_action', action=action)
 
-                self.deliver_action(action)
+            self.deliver_action(action)
 
         return decided
 
@@ -84,6 +84,12 @@ class FlightComputerNet(FlightComputer):
         return decided
 
 
+    def debug(self):
+        return {"State" : f"{self.state}",
+                "next_action" : f"{self.sample_next_action()}",
+                "stage" : self.current_stage_index}
+
+
 flight_computer = FlightComputerNet(readout_state(0))
 
 app = Flask(__name__)
@@ -101,6 +107,20 @@ def decide_on_action():
             json.loads(request.form['action']))
         return json.dumps(r)
 
+@app.route("/sample_next_action", methods=('PUT',))
+def sample_next_action():
+    if request.method == 'PUT':
+        r = flight_computer.sample_next_action()
+        return json.dumps(r)
+
+
+@app.route("/decide_on_state", methods=('PUT',))
+def decide_on_state():
+    if request.method == 'PUT':
+        r = flight_computer.decide_on_state(
+            json.loads(request.form['state']))
+        return json.dumps(r)
+
 @app.route("/deliver_action", methods=('PUT',))
 def deliver_action():
     if request.method == 'PUT':
@@ -112,7 +132,7 @@ def deliver_action():
 def deliver_state():
     if request.method == 'PUT':
         r = flight_computer.deliver_state(json.loads(request.form['state']))
-        return Json.dumps(r)
+        return json.dumps(r)
 
 @app.route("/acceptable_action", methods=('PUT',))
 def acceptable_action():
@@ -128,7 +148,10 @@ def acceptable_state():
         r = flight_computer.acceptable_state(p)
         return json.dumps(r)
 
-
+@app.route("/debug", methods=('PUT',))
+def debug():
+    if request.method == 'PUT':
+        return json.dumps(flight_computer.debug())
 
 # https://www.edureka.co/community/30828/how-do-you-add-a-background-thread-to-flask-in-python
 # def server_thread():
@@ -150,5 +173,7 @@ if __name__ == "__main__":
         if port != args.port:
             flight_computer.add_peer(f"{BASE_URL}:{port}")
 
-    app.logger.setLevel(logging.DEBUG)
+    logging.getLogger('werkzeug').disabled = True
+
+    #app.logger.setLevel(logging.DEBUG)
     app.run(port=args.port)
