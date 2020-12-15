@@ -36,6 +36,7 @@ class ServerLog:
         return False
 
     def append_entry( self, entry):
+        assert isinstance(entry, LogEntry)
         self._data.append(entry)
 
     def lastIndex( self):
@@ -61,7 +62,10 @@ class Server:
 
         self.currentTerm = 0
         self.votedFor = None
-        self.log = ServerLog()
+        self.log = ServerLog() # An array [1..]
+
+        # self.log[1] = LogEntry(action, term)
+        # self.log[45].term .action
 
         self.commitIndex = 0
         self.lastApplied = 0
@@ -70,7 +74,10 @@ class Server:
 
     def reset_leader_state(self):
         self.nextIndex = dict()
-        self.matchIndex = dict()
+
+        # self.nextIndex[ peer.name ] = 3
+
+        self.matchIndex = 0
 
     def persist_state(self):
         with open(self.name + ".txt") as fo:
@@ -127,3 +134,7 @@ class Server:
             self.commitIndex = min(leaderCommit, self.log.lastIndex())
 
         return term, True                                                                               # à vérif pq term 
+
+if __name__ == '__main__':
+    server = Server("blabla")
+    server.persist_state()
