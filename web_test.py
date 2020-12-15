@@ -14,8 +14,6 @@ leader = flight_computers[0]
 state = readout_state(timestep)
 timestep += 1
 
-print(state)
-
 r = call_peer('http://127.0.0.1:5000',
               'acceptable_action',
               action=leader.sample_next_action())

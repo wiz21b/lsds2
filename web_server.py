@@ -26,9 +26,6 @@ class FlightComputerNet(FlightComputer):
         # Runnin process outside http req/repl
         #  Sequentially, should be in parallel !
 
-
-        # https://stackoverflow.com/questions/6893968/how-to-get-the-return-value-from-a-thread-in-python
-
         calls = [ThreadWithReturnValue(
             target=call_peer_with_dict,
             args=(peer_url, 'acceptable_action', {"action": action}))
@@ -38,6 +35,8 @@ class FlightComputerNet(FlightComputer):
         results = [t.join() for t in calls]
         app.logger.debug(results)
         acceptations = sum(filter(lambda t: t, results))
+
+        # This code below explains the code above...
 
         # acceptations = 0
         # for peer_url in self.peers:
