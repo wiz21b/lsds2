@@ -102,6 +102,12 @@ def decide_on_action():
             json.loads(request.form['action']))
         return json.dumps(r)
 
+@app.route("/decide_on_state", methods=('PUT',))
+def decide_on_state():
+    if request.method == 'PUT':
+        r = flight_computer.decide_on_state(json.loads(request.form['state']))
+        return json.dumps(r)
+
 @app.route("/deliver_action", methods=('PUT',))
 def deliver_action():
     if request.method == 'PUT':

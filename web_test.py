@@ -16,12 +16,16 @@ timestep += 1
 
 print(state)
 
-r = call_peer('http://127.0.0.1:5000',
-              'acceptable_action',
-              action=leader.sample_next_action())
+# r = call_peer('http://127.0.0.1:5000',
+#               'acceptable_action',
+#               action=leader.sample_next_action())
 
-r = call_peer('http://127.0.0.1:5000',
-              'decide_on_action',
-              action=leader.sample_next_action())
+# r = call_peer('http://127.0.0.1:5000',
+#               'decide_on_action',
+#               action=leader.sample_next_action())
+
+r = call_peer('http://127.0.0.1:5000', 'acceptable_state', state=state)
+
+r = call_peer('http://127.0.0.1:5000', 'decide_on_state', state=state)
 
 print(r)
