@@ -30,13 +30,6 @@ def logger_process(queue):
         except KeyboardInterrupt:
             break
 
-    # try:
-    #     while not queue.empty():
-    #         queue.get(timeout=1)
-    # except:
-    #     pass
-
-    fo.write("done")
     fo.flush()
     fo.close()
 
@@ -62,7 +55,7 @@ class Worker(Process):
         try:
             while True:
                 try:
-                    if test_message is None:
+                    if True and test_message is None:
                         #test_message = "done"
                         self.send_all("lklk")
 
@@ -75,7 +68,7 @@ class Worker(Process):
                     #raise Exception("crash")
                     # Now process the message
 
-                    if 'STATE' not in msg:
+                    if True or 'STATE' not in msg:
                         self.log(msg)
 
                 except Empty:
@@ -135,8 +128,8 @@ class Worker(Process):
         self._control_queue = q
 
 if __name__ == '__main__':
-    from multiprocessing import set_start_method
-    set_start_method("spawn")
+    # from multiprocessing import set_start_method
+    # set_start_method("spawn")
 
     logging_queue = Queue()
     log_listener = Process(target=logger_process,
@@ -156,7 +149,7 @@ if __name__ == '__main__':
 
     leader_queue = Queue()
 
-    for i in range(len(flight_computers)):
+    for i in range(len(flight_computers)*2):
 
         recq = Queue()
         # recq, qs, c, lq, logq
@@ -165,7 +158,7 @@ if __name__ == '__main__':
         jobs_queue[p] = recq
         control_queue[p] = Queue()
 
-        p.set_computer(flight_computers[i])
+        p.set_computer(flight_computers[i % len(flight_computers)])
         p.set_leader_queue(leader_queue)
         p.set_logging_queue(logging_queue)
         p.set_receiving_queue(jobs_queue[p])
@@ -249,23 +242,26 @@ if __name__ == '__main__':
     # the end, that ought to work. Ideally we should have
     # a stop channel to complete this
 
+    logging.info("Requesting process to stop")
     for j in jobs:
         control_queue[j].put("STOP")
 
+    # At this point messages can still be send/received
+    # wel'll have to wait for the stop command to
+    # happen on all computer.
+
+    # We clear all remaining messages until the stop
+    # command has been delivered.
+    logging.info("Waiting process to deliver stop & clearing messages")
     while any([j.is_alive() for j in jobs]):
         for j in jobs:
+            logging.info(f"{j.name} qsize = {jobs_queue[j].qsize()}")
             while not jobs_queue[j].empty():
                 jobs_queue[j].get(timeout=1)
                 #jobs_queue[j].put("STOP", block=True)
-        logging.info(f"Jobs still alive {j.name}")
 
 
-    logging.info("Emptying computer queues")
-    for job, sendq in jobs_queue.items():
-        while not sendq.empty():
-            sendq.get(block=True)
-
-    logging.info("Killing logging")
+    logging.info("Killing logging queue")
     logging_queue.put_nowait(None)
     while log_listener.is_alive():
         logging.info("Log listener alive")
