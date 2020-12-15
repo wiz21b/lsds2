@@ -66,10 +66,10 @@ class Worker(Process):
                         #test_message = "done"
                         self.send_all("lklk")
 
-                    msg = self._recq.get(block=True)
+                    msg = self._recq.get(block=True, timeout=1)
 
                     if msg == "STOP":
-                        raise Exception("Requested stop")
+                        break
 
                     # One can simulate a crash like this :
                     #raise Exception("crash")
@@ -78,26 +78,27 @@ class Worker(Process):
                     if 'STATE' not in msg:
                         self.log(msg)
 
-                    sleep(0.5)
-
                 except Empty:
                     self.log("Empty queue ?")
 
+                try:
+                    #sleep(0.001)
+                    if not self._control_queue.empty():
+                        control = self._control_queue.get(block=False)
+                        if control:
+                            self.log(f"Got stop control : {control}")
+                            break
+                except Exception as ex:
+                    self.log(f"Control {type(ex)} ?")
+
+
         except Exception as exception:
             self.log(f"Stopping '{self.name}' because {str(exception)}")
+
         except BaseException as exception:
             # KeyboardInterrupt is BaseException not Exception !
             self.log(f"Stopping '{self.name}' because {type(exception)}")
 
-        finally:
-            # Emptying the queue so that the process can stop
-            pass
-
-            # try:
-            #     while not self._recq.empty():
-            #         self._recq.get(block=True)
-            # except:
-            #     pass
 
 
     def log(self, msg):
@@ -130,6 +131,9 @@ class Worker(Process):
     def set_logging_queue(self, q):
         self._logging = q
 
+    def set_controle_queue( self, q):
+        self._control_queue = q
+
 if __name__ == '__main__':
     from multiprocessing import set_start_method
     set_start_method("spawn")
@@ -148,6 +152,7 @@ if __name__ == '__main__':
 
     jobs = []
     jobs_queue = dict()
+    control_queue = dict()
 
     leader_queue = Queue()
 
@@ -158,11 +163,14 @@ if __name__ == '__main__':
         p = Worker(name=f"Computer {i}")
 
         jobs_queue[p] = recq
+        control_queue[p] = Queue()
+
         p.set_computer(flight_computers[i])
         p.set_leader_queue(leader_queue)
         p.set_logging_queue(logging_queue)
-
         p.set_receiving_queue(jobs_queue[p])
+        p.set_controle_queue(control_queue[p])
+
         jobs.append(p)
 
     for sender in jobs:
@@ -233,18 +241,23 @@ if __name__ == '__main__':
     # https://stackoverflow.com/questions/34506638/how-to-register-atexit-function-in-pythons-multiprocessing-subprocess
 
 
-    logging.info("Sending STOP to computers")
-    for job, sendq in jobs_queue.items():
-        sendq.put("STOP", block=True)
 
     # At this point, jobs may still be sending messages to each other
+    # So what we do is we first read all messages to clear the queue
+    # and put a "STOP" right after. We basically overflow each
+    # process with stop message and prevent them of working. In
+    # the end, that ought to work. Ideally we should have
+    # a stop channel to complete this
+
+    for j in jobs:
+        control_queue[j].put("STOP")
+
     while any([j.is_alive() for j in jobs]):
         for j in jobs:
             while not jobs_queue[j].empty():
                 jobs_queue[j].get(timeout=1)
-            jobs_queue[j].put("STOP", block=True)
-        logging.info("Jobs still alive")
-        sleep(1)
+                #jobs_queue[j].put("STOP", block=True)
+        logging.info(f"Jobs still alive {j.name}")
 
 
     logging.info("Emptying computer queues")
