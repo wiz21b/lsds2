@@ -1,3 +1,4 @@
+import logging
 import requests
 import json
 from flask import Flask, request
@@ -33,11 +34,14 @@ class FlightComputerNet(FlightComputer):
             except NetworkException:
                 pass
 
+        app.logger.info(f"{acceptations} acceptations")
         decided = acceptations / (len(self.peers) + 1) > 0.5
 
         if decided:
-            for p in self.peers:
-                p.deliver_action(action)
+            for peer_url in self.peers:
+                call_peer(peer_url,
+                          'deliver_action', action=action)
+
                 self.deliver_action(action)
 
         return decided
@@ -60,6 +64,12 @@ def decide_on_action():
             json.loads(request.form['action']))
         return json.dumps(r)
 
+@app.route("/deliver_action", methods=('PUT',))
+def deliver_action():
+    if request.method == 'PUT':
+        r = flight_computer.deliver_action(
+            json.loads(request.form['action']))
+        return json.dumps(r)
 
 @app.route("/acceptable_action", methods=('PUT',))
 def acceptable_action():
@@ -85,4 +95,5 @@ if __name__ == "__main__":
         if port != args.port:
             flight_computer.add_peer(f"{BASE_URL}:{port}")
 
+    app.logger.setLevel(logging.DEBUG)
     app.run(port=args.port)

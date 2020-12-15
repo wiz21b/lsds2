@@ -36,6 +36,7 @@ class ServerLog:
         return False
 
     def append_entry( self, entry):
+        assert isinstance(entry, LogEntry)
         self._data.append(entry)
 
     def lastIndex( self):
@@ -61,7 +62,10 @@ class Server:
 
         self.currentTerm = 0
         self.votedFor = None
-        self.log = ServerLog()
+        self.log = ServerLog() # An array [1..]
+
+        # self.log[1] = LogEntry(action, term)
+        # self.log[45].term .action
 
         self.commitIndex = 0
         self.lastApplied = 0

@@ -39,4 +39,5 @@ def call_peer(peer_url, method, **kwargs):
     if r.status_code == 200:  # HTTP status code success
         return json.loads(r.text)
     else:
+        logger.error(f"unexpected HTTP status {r.status_code}")
         raise NetworkException(f"Request failure HTTP:{r.status_code}")
