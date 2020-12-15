@@ -99,17 +99,18 @@ class Server:
 
     def requestVote(self, term, candidateId, lastLogIndex, lastLogTerm):
         if term < self.currentTerm:
-            return False, False
+            return self.currentTerm, False
 
         if self.votedFor in (None, candidateId) and \
-           lastLogIndex >= self.log.lastIndex():                                                        # à verif pour l'index
-            return term, True                                                                           # à vérif pq term 
+            lastLogIndex >= self.log.lastIndex():
+            self.currentTerm = term
+            return term, True
 
         return False, False
 
     def appendEntries(self, term, leaderId, prevLogIndex, prevLogTerm, entries, leaderCommit):
         if term < self.currentTerm:
-            return False, False
+            return self.currentTerm, False
 
         if prevLogIndex >= len(self.log) or self.log[prevLogIndex].term != prevLogTerm:
             return False, False
@@ -133,7 +134,8 @@ class Server:
         if leaderCommit > self.commitIndex:
             self.commitIndex = min(leaderCommit, self.log.lastIndex())
 
-        return term, True                                                                               # à vérif pq term 
+        self.currentTerm = term
+        return term, True
 
 if __name__ == '__main__':
     server = Server("blabla")
