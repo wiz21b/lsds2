@@ -27,7 +27,7 @@ class ServerLog:
 
     def clear_from( self, ndx):
         assert 1 <= ndx <= len(self._data)
-        self.data = self.data[0:ndx-1]
+        self.data = self.data[0:ndx-1] #C'est pas un clear to ndx et pas from ndx là ?
 
     def has_entry( self, entry):
         for e in self._data:
@@ -68,7 +68,6 @@ class Server:
 
         self.reset_leader_state()
 
-
     def reset_leader_state(self):
         self.nextIndex = dict()
         self.matchIndex = dict()
@@ -86,39 +85,45 @@ class Server:
         # apply log[lastApplied] to state machine (§5.3)
 
         if self.commitIndex > self.lastApplied:
-            lastApplied += 1
+            self.lastApplied += 1
 
-            self.apply_state_machine(self.log[lastApplied])
+            self.apply_state_machine(self.log[self.lastApplied])
 
 
     def requestVote(self, term, candidateId, lastLogIndex, lastLogTerm):
-        if term < self.current_term:
+        if term < self.currentTerm:
             return False, False
 
-        if votedFor in (None, candidateId) and \
-           lastLogIndex >= self.log.lastIndex() and \
-           lastLogTerm >= self.log.lastTerm():
-            return self.currentTerm, True
+        if self.votedFor in (None, candidateId) and \
+           lastLogIndex >= self.log.lastIndex():                                                        # à verif pour l'index
+            return term, True                                                                           # à vérif pq term 
+
+        return False, False
 
     def appendEntries(self, term, leaderId, prevLogIndex, prevLogTerm, entries, leaderCommit):
         if term < self.currentTerm:
-            return False
+            return False, False
 
         if prevLogIndex >= len(self.log) or self.log[prevLogIndex].term != prevLogTerm:
-            return False
+            return False, False
 
-        entries = ServerLog(entries)
+        #C'est censé déjà être le cas et si ça ne l'est pas, c'est que l'appel est mal formaté
+        #entries = ServerLog(entries) 
 
+        i = prevLogIndex
         for ndx, new_log_entry in enumerate(entries):
-            if self.log[ndx].term != entries[ndx].term:
+            if self.log[i].term != entries[ndx].term:
                 self.log.clear_from(ndx)
                 # ndx is growing => if we clear from here there
                 # is nothing left to delete from self.log
                 break
+            i += 1
 
-        for new_log_entry in entries:
-            if not self.log.has_entry( new_log_entry):
+        for ndx, new_log_entry in enumerate(entries):
+            if ndx >= i - prevLogIndex:
                 self.log.append_entry(new_log_entry)
 
         if leaderCommit > self.commitIndex:
             self.commitIndex = min(leaderCommit, self.log.lastIndex())
+
+        return term, True                                                                               # à vérif pq term 
