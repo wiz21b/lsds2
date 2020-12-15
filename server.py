@@ -122,3 +122,8 @@ class Server:
 
         if leaderCommit > self.commitIndex:
             self.commitIndex = min(leaderCommit, self.log.lastIndex())
+
+
+if __name__ == '__main__':
+    server = Server("blabla")
+    server.persist_state()

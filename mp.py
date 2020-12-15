@@ -37,17 +37,6 @@ def logger_process(queue):
 
 class Worker(Process):
 
-    # def __init__(self, recq, qs, c, lq, logq):
-
-    #     self._recq = recq
-    #     self._sendqs = qs
-    #     self._computer = c
-    #     self._leader_queue = lq
-    #     self._logging = logq
-
-    #     super(Worker).__init__()
-
-
     def run(self):
 
         test_message = None
@@ -55,9 +44,8 @@ class Worker(Process):
         try:
             while True:
                 try:
-                    if True and test_message is None:
-                        #test_message = "done"
-                        self.send_all("lklk")
+                    # if True and test_message is None:
+                    #     self.send_all("lklk")
 
                     msg = self._recq.get(block=True, timeout=1)
 
