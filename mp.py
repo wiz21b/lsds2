@@ -15,11 +15,13 @@ def logger_process(queue):
     while True:
         try:
             record = queue.get()
-            if record is None:  # We send this as a sentinel to tell the listener to quit.
+            if record is None:
+                # We send this as a sentinel to tell the listener to quit.
                 break
-            #logger.error(record)  # No level or filter logic applied - just do it!
+
             #print(f"{record}\n")
             fo.write(f"{record}\n")
+
         except Exception:
             import sys, traceback
             print('Whoops! Problem:', file=sys.stderr)
@@ -28,11 +30,11 @@ def logger_process(queue):
         except KeyboardInterrupt:
             break
 
-    try:
-        while not queue.empty():
-            queue.get(timeout=1)
-    except:
-        pass
+    # try:
+    #     while not queue.empty():
+    #         queue.get(timeout=1)
+    # except:
+    #     pass
 
     fo.write("done")
     fo.flush()
@@ -42,20 +44,42 @@ def logger_process(queue):
 
 class Worker(Process):
 
+    # def __init__(self, recq, qs, c, lq, logq):
+
+    #     self._recq = recq
+    #     self._sendqs = qs
+    #     self._computer = c
+    #     self._leader_queue = lq
+    #     self._logging = logq
+
+    #     super(Worker).__init__()
+
+
     def run(self):
+
+        test_message = None
 
         try:
             while True:
                 try:
+                    if test_message is None:
+                        #test_message = "done"
+                        self.send_all("lklk")
+
                     msg = self._recq.get(block=True)
 
                     if msg == "STOP":
                         raise Exception("Requested stop")
 
+                    # One can simulate a crash like this :
                     #raise Exception("crash")
                     # Now process the message
 
-                    self.log(msg)
+                    if 'STATE' not in msg:
+                        self.log(msg)
+
+                    sleep(0.5)
+
                 except Empty:
                     self.log("Empty queue ?")
 
@@ -67,11 +91,13 @@ class Worker(Process):
 
         finally:
             # Emptying the queue so that the process can stop
-            try:
-                while not self._recq.empty():
-                    self._recq.get(block=True)
-            except:
-                pass
+            pass
+
+            # try:
+            #     while not self._recq.empty():
+            #         self._recq.get(block=True)
+            # except:
+            #     pass
 
 
     def log(self, msg):
@@ -80,10 +106,14 @@ class Worker(Process):
 
         self._logging.put(f"{datetime.now()} {self.name}: {msg}")
 
-    def send_msg(self, dest, msg):
-        logging.info(f"To {dest} : {msg}")
-        self._sendqs[dest].put(msg)
+    def send_all(self, msg):
+        for dest, q in self._sendqs.items():
+            self.log(f"To {dest} : {msg}")
+            q.put(msg)
 
+    def send_msg(self, dest, msg):
+        self.log(f"To {dest} : {msg}")
+        self._sendqs[dest].put(msg)
 
     def set_receiving_queue(self, q):
         self._recq = q
@@ -122,12 +152,16 @@ if __name__ == '__main__':
     leader_queue = Queue()
 
     for i in range(len(flight_computers)):
+
+        recq = Queue()
+        # recq, qs, c, lq, logq
         p = Worker(name=f"Computer {i}")
+
+        jobs_queue[p] = recq
         p.set_computer(flight_computers[i])
         p.set_leader_queue(leader_queue)
         p.set_logging_queue(logging_queue)
 
-        jobs_queue[p] = Queue()
         p.set_receiving_queue(jobs_queue[p])
         jobs.append(p)
 
@@ -175,7 +209,7 @@ if __name__ == '__main__':
 
                     if to_kill.is_alive():
                         logging.warning(f"Crashing job '{to_kill.name}'")
-                        #jobs_queue[to_kill].put("STOP", block=True)
+                        jobs_queue[to_kill].put("STOP", block=True)
                         logging.warning(f"Crashed job '{to_kill.name}'")
 
 
@@ -205,6 +239,10 @@ if __name__ == '__main__':
 
     # At this point, jobs may still be sending messages to each other
     while any([j.is_alive() for j in jobs]):
+        for j in jobs:
+            while not jobs_queue[j].empty():
+                jobs_queue[j].get(timeout=1)
+            jobs_queue[j].put("STOP", block=True)
         logging.info("Jobs still alive")
         sleep(1)
 
