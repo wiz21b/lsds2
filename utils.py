@@ -1,3 +1,4 @@
+import threading
 import logging
 import json
 import requests
@@ -13,9 +14,28 @@ ch.setLevel(logging.DEBUG)
 ch.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
 logger.addHandler(ch)
 
+
+
+class ThreadWithReturnValue(threading.Thread):
+    def __init__(self, group=None, target=None, name=None, args=(), kwargs=None, *, daemon=None):
+        threading.Thread.__init__(self, group, target, name, args, kwargs, daemon=daemon)
+
+        self._return = None
+
+    def run(self):
+        if self._target is not None:
+            self._return = self._target(*self._args, **self._kwargs)
+
+    def join(self):
+        threading.Thread.join(self)
+        return self._return
+
+
 class NetworkException(Exception):
     pass
 
+def call_peer_with_dict(peer_url, method, args_dict):
+    return call_peer(peer_url, method, **args_dict)
 
 def call_peer(peer_url, method, **kwargs):
 
@@ -37,7 +57,9 @@ def call_peer(peer_url, method, **kwargs):
         raise NetworkException(ex)
 
     if r.status_code == 200:  # HTTP status code success
-        return json.loads(r.text)
+        res = json.loads(r.text)
+        logger.debug(f"Return sucess ! : {res}")
+        return res
     else:
         logger.error(f"unexpected HTTP status {r.status_code}")
         raise NetworkException(f"Request failure HTTP:{r.status_code}")
