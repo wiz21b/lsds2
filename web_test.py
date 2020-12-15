@@ -3,40 +3,25 @@ import time
 import requests
 from starter_code.withoutksp import allocate_flight_computers, commandline_args, readout_state
 
-
-
-
-RETRY_TIME = 10 # seconds
-
-
-
+from utils import call_peer
 
 r = None
-timestep = 1
+timestep = 0
 
-while True:
-    try:
-        state = readout_state(timestep)
-        timestep += 1
+flight_computers = allocate_flight_computers(commandline_args(), timestep)
+leader = flight_computers[0]
 
-        print(state)
+state = readout_state(timestep)
+timestep += 1
 
-        r = requests.put('http://127.0.0.1:5000/decideOnState',
-                         data = {"state" : json.dumps(state)})
+print(state)
 
-        # r = requests.put('http://127.0.0.1:5000/appendEntries',
-        #                  data = { "term" : "ze term",
-        #                           "leaderId" : "EEE",
-        #                           "prevLogIndex" : "12",
-        #                           "prevLogTerm" : "fd",
-        #                           "entries" : "",
-        #                           "leaderCommit" : ""})
-        if r.status_code == 200:
-            print(r.text)
-            break
-        else:
-            raise Exception("Bad status code")
+r = call_peer('http://127.0.0.1:5000',
+              'acceptable_action',
+              action=leader.sample_next_action())
 
-    except Exception as ex:
-        print(ex)
-        time.sleep(RETRY_TIME)
+r = call_peer('http://127.0.0.1:5000',
+              'decide_on_action',
+              action=leader.sample_next_action())
+
+print(r)

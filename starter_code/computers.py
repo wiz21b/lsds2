@@ -115,6 +115,8 @@ class FlightComputer:
         return decided
 
     def decide_on_action(self, action):
+        # Leader proposes an action to peers
+        # Then peers say if they accept the proposed action
         acceptations = [p.acceptable_action(action) for p in self.peers]
         decided = sum(acceptations) / (len(self.peers) + 1) > 0.5
 

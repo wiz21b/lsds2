@@ -71,7 +71,10 @@ class Server:
 
     def reset_leader_state(self):
         self.nextIndex = dict()
-        self.matchIndex = dict()
+
+        # self.nextIndex[ peer.name ] = 3
+
+        self.matchIndex = 0
 
     def persist_state(self):
         with open(self.name + ".txt") as fo:

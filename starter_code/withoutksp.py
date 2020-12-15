@@ -90,6 +90,10 @@ if __name__ == "__main__":
                     if leader.decide_on_action(action):
                         execute_action(action, timestep)
                         timestep += 1
+                    # else:
+                    #   # The leader didn't decide.
+                    #   # If it doesn't decide n times in a row
+                    #   # then elect a new leader.
                 else:
                     complete = True
 
