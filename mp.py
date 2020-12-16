@@ -248,8 +248,12 @@ if __name__ == '__main__':
                 action = leader_queue.get(block=False)
 
                 if action['type'] == "LEADER_ANNONCE":
-                    print(f"New leader : {action['name']}")
                     # change leader
+                    for j in jobs:
+                        if j.name == action['name']:
+                            current_leader = j
+                            print(f"New leader : {action['name']}")
+
                     pass
                 elif action['type'] == "DECISION":
                     print(f"Decided action : {action}")
