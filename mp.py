@@ -61,11 +61,12 @@ class Worker(Process):
                     #raise Exception("crash")
                     # Now process the message
 
-                    if True or 'STATE' not in msg:
+                    if 'STATE' not in msg:
                         self.log(msg)
 
                 except Empty:
-                    self.log("Empty queue ?")
+                    pass
+                    #self.log("Empty queue ?")
 
                 try:
                     #sleep(0.001)
@@ -97,6 +98,10 @@ class Worker(Process):
     def send_me_leader(self, name):
         self._leader_queue.put({"type" : "LEADER_ANNONCE",
                                 "name" : name})
+
+    def send_decided_action(self, name, action):
+        self._leader_queue.put({"type" : "DECISION",
+                                "action" : action})
 
     def log(self, msg):
         #return
@@ -243,10 +248,11 @@ if __name__ == '__main__':
                 action = leader_queue.get(block=False)
 
                 if action['type'] == "LEADER_ANNONCE":
-                    print(f"New leader : {action}")
+                    print(f"New leader : {action['name']}")
                     # change leader
                     pass
                 elif action['type'] == "DECISION":
+                    print(f"Decided action : {action}")
                     # do action
                     pass
 

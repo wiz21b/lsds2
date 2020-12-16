@@ -106,14 +106,12 @@ class Server:
         self.ackEntries = dict()
         self.ackElec = dict()
         self._timer_thread = None
-
+        self.start_timer(5)
 
     def start_timer(self, duration):
-
-        if self._timer_thread is None:
-            self._timer_thread = threading.Timer(10, self.timeout)
-        else:
+        if self._timer_thread:
             self._timer_thread.cancel()
+        self._timer_thread = threading.Timer(duration, self.timeout_callback)
 
         self._timer_thread.start()
 
@@ -127,9 +125,6 @@ class Server:
     def set_comm(self, worker):
         self.comm = worker
 
-    def start_timer(self, duration):
-        pass
-
     def init_timeout(self, value):
         self.timeout = value
 
@@ -138,13 +133,13 @@ class Server:
         self.ackEntries[peerID] = AckEntry(None, None)
         self.ackElec[peerID] = AckEntry(None, None)
 
-    def timeout(self):
+    def timeout_callback(self):
         with self._thread_lock:
             # do stuff here
             print("Time out!")
 
             self.comm.send_me_leader(self.name)
-            self.comm.send_decided_action(self.name)
+            self.comm.send_decided_action(self.name, "dummy")
 
             #send_all( { "methode" : "requestVote", param...} )
 
