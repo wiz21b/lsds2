@@ -1,3 +1,5 @@
+import sys
+import traceback
 import logging
 import random
 from time import sleep
@@ -9,6 +11,7 @@ from queue import Empty
 
 from starter_code.withoutksp import allocate_flight_computers, commandline_args, readout_state
 
+from server import Server
 
 def logger_process(queue):
     fo = open("log","w")
@@ -24,7 +27,6 @@ def logger_process(queue):
             fo.write(f"{record}\n")
 
         except Exception:
-            import sys, traceback
             print('Whoops! Problem:', file=sys.stderr)
             traceback.print_exc(file=sys.stderr)
 
@@ -39,19 +41,21 @@ def logger_process(queue):
 class Worker(Process):
 
     def run(self):
-
-        test_message = None
+        self._raft_server = Server(self.name)
+        self._raft_server.set_comm(self)
+        self._raft_server.start()
 
         try:
             while True:
                 try:
-                    # if True and test_message is None:
-                    #     self.send_all("lklk")
+                    # 1/Code Execution
+                    # e.g. requestVote to all peers
+                    #self.send_all("lklk")
 
-                    msg = self._recq.get(block=True, timeout=1)
-
-                    if msg == "STOP":
-                        break
+                    # 2/ Message handling
+                    msg = self._recq.get(block=False, timeout=1)
+                    # if msg['method'] == "requestVote":
+                    #     raft.server.requestVote()
 
                     # One can simulate a crash like this :
                     #raise Exception("crash")
@@ -76,12 +80,23 @@ class Worker(Process):
 
         except Exception as exception:
             self.log(f"Stopping '{self.name}' because {str(exception)}")
+            self.log(str(traceback.format_exc()))
 
         except BaseException as exception:
             # KeyboardInterrupt is BaseException not Exception !
             self.log(f"Stopping '{self.name}' because {type(exception)}")
 
+        self._raft_server.stop()
+        while not self._recq.empty():
+            self._recq.get()
+        while not self._control_queue.empty():
+            self._control_queue.get()
 
+
+
+    def send_me_leader(self, name):
+        self._leader_queue.put({"type" : "LEADER_ANNONCE",
+                                "name" : name})
 
     def log(self, msg):
         #return
@@ -141,7 +156,7 @@ if __name__ == '__main__':
 
     leader_queue = Queue()
 
-    for i in range(len(flight_computers)*2):
+    for i in range(len(flight_computers)):
 
         recq = Queue()
         # recq, qs, c, lq, logq
@@ -151,12 +166,18 @@ if __name__ == '__main__':
         control_queue[p] = Queue()
 
         p.set_computer(flight_computers[i % len(flight_computers)])
+
         p.set_leader_queue(leader_queue)
+
         p.set_logging_queue(logging_queue)
+
+        # Set destination queue
         p.set_receiving_queue(jobs_queue[p])
         p.set_controle_queue(control_queue[p])
 
         jobs.append(p)
+
+
 
     for sender in jobs:
         send_queues = dict()
@@ -214,7 +235,21 @@ if __name__ == '__main__':
                             sendq.put(["STATE", state], block=True)
 
             try:
+                # 1/ Le leader est élu : leader_queue.put("LEADER_ANNOUCNCE : I am the leader")
+                # 2/ Le client notr le nom_du_leader
+                # 3/ Le client fait uen demande au leader : server[nom_du_leader].put()
+                # 4/ Le leader annonce sa décision : leader_queue.put("DECISION : dkjfksljdf")
+
                 action = leader_queue.get(block=False)
+
+                if action['type'] == "LEADER_ANNONCE":
+                    print(f"New leader : {action}")
+                    # change leader
+                    pass
+                elif action['type'] == "DECISION":
+                    # do action
+                    pass
+
             except Empty:
                 pass
 
@@ -236,24 +271,28 @@ if __name__ == '__main__':
 
     logging.info("Requesting process to stop")
     for j in jobs:
-        control_queue[j].put("STOP")
+        if j.is_alive():
+            control_queue[j].put("STOP")
 
-    # At this point messages can still be send/received
-    # wel'll have to wait for the stop command to
-    # happen on all computer.
+    # Wait for control message to trigger process exit.
+    # This will work only if the process can handle
+    # the control message :-(
 
-    # We clear all remaining messages until the stop
-    # command has been delivered.
-    logging.info("Waiting process to deliver stop & clearing messages")
     while any([j.is_alive() for j in jobs]):
-        for j in jobs:
-            logging.info(f"{j.name} qsize = {jobs_queue[j].qsize()}")
-            while not jobs_queue[j].empty():
-                jobs_queue[j].get(timeout=1)
-                #jobs_queue[j].put("STOP", block=True)
+        sleep(1)
+
+    # We clear all remaining messages.
+    logging.info("Clearing messages")
 
 
-    logging.info("Killing logging queue")
+
+    for j in jobs:
+        jobs_queue[j].close()
+        jobs_queue[j].join_thread()
+        control_queue[j].close()
+        control_queue[j].join_thread()
+
+    logging.info("Killing logging process")
     logging_queue.put_nowait(None)
     while log_listener.is_alive():
         logging.info("Log listener alive")
@@ -269,7 +308,6 @@ if __name__ == '__main__':
 
     logging.info("Joining processes")
     for j in jobs:
-        #j.terminate()
         j.join()
     log_listener.join()
 

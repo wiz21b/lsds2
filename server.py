@@ -105,6 +105,18 @@ class Server:
 
         self.ackEntries = dict()
         self.ackElec = dict()
+    def start(self):
+        self.start_timer(4)
+
+    def stop(self):
+        if self._timer_thread:
+            self._timer_thread.join()
+
+    def set_comm(self, worker):
+        self.comm = worker
+
+    def start_timer(self, duration):
+        pass
 
     def init_timeout(self, value):
         self.timeout = value
@@ -113,6 +125,18 @@ class Server:
         self.peers[peerID] = peer_url
         self.ackEntries[peerID] = AckEntry(None, None)
         self.ackElec[peerID] = AckEntry(None, None)
+
+    def timeout(self):
+        with self._thread_lock:
+            # do stuff here
+            print("Time out!")
+
+            self.comm.send_me_leader(self.name)
+            self.comm.send_decided_action(self.name)
+
+            #send_all( { "methode" : "requestVote", param...} )
+
+            self._timeout_expired = True
 
     def ack_entries_reset(self):
         for server in self.peers:
@@ -134,18 +158,15 @@ class Server:
         self.received_append_entries = 0
 
 
-        # for peer_url in self.peers:
+        #send_all( { "methode" : "requestVote", param....} )
+
+        # for peer_queues in self.peers:
         #     # RPC to send requestVote @ peer_url
 
         #         # quid des time out ?
         #         # quid des exceptions ?
 
 
-        # lkqsjdkqs
-
-        return self.convert_to_candidate_step2, \
-            [(peer_url, 'requestVote', {"action": ""})
-             for peer_url in self.peers]
 
     def convert_to_leader(self):
         pass
