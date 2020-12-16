@@ -1,6 +1,13 @@
+import threading
 from datetime import datetime
 import json
 from utils import call_peer,ThreadWithReturnValue,call_peer_with_dict
+
+
+def time_out_action(raft_server):
+    with raft_server.thread_lock:
+        raft_server.election_time_out()
+
 
 class ServerEncoder(json.JSONEncoder):
     def default( self, obj):
@@ -71,6 +78,8 @@ class ServerLog:
 
 class Server:
     def __init__(self, name):
+        self._thread_lock = threading.Lock()
+
         self.name = name
 
         self.currentTerm = 0
@@ -88,6 +97,23 @@ class Server:
         self.state = "Follower"
 
         self.peers = []
+        self._timer_thread = None
+
+
+    def start_timer(self, duration):
+
+        if self._timer_thread is None:
+            self._timer_thread = threading.Timer(10, self.timeout)
+        else:
+            self._timer_thread.cancel()
+
+        self._timer_thread.start()
+
+    def timeout(self):
+        with self._thread_lock:
+            # do stuff here
+            print("Tiemout!")
+
 
     def add_peer(self, peer_url):
         self.peers.append(peer_url)
@@ -131,6 +157,8 @@ class Server:
 
     # If timeout occurs, then thif method is called magic !
     def election_time_out(self):
+        print("TIMEOUT")
+        return
 
         if self.state == "Follower":
             if self.received_append_entries == 0:
@@ -211,6 +239,9 @@ class Server:
 
         self.currentTerm = term
         return term, True
+
+
+
 
 if __name__ == '__main__':
 
