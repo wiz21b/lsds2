@@ -61,7 +61,7 @@ class Worker(Process):
                     #raise Exception("crash")
                     # Now process the message
 
-                    if type(msg) == dict:
+                    if type(msg) == dict and 'method' in msg:
                         if msg['method'] == "requestVote":
                             d = msg['data']
                             self._raft_server.requestVote(
@@ -74,7 +74,12 @@ class Worker(Process):
                                 d['term'], d['candidateId'],
                                 d['lastLogIndex'], d['lastLogTerm'])
 
-                    if True or 'STATE' not in msg:
+                        if msg['method'] == "proposeStateAction":
+                            self._raft_server.proposeStateAction(
+                                msg['state_action'])
+
+
+                    if 'STATE' not in msg:
                         self.log(msg)
 
                 except Empty:
@@ -156,6 +161,10 @@ class Worker(Process):
 
 
 
+def send_propose_state_action(queue, state_action):
+    print("send_propose_state_action")
+    queue.put({"method" : "proposeStateAction",
+               "state_action" : state_action})
 
 if __name__ == '__main__':
     # from multiprocessing import set_start_method
@@ -272,6 +281,8 @@ if __name__ == '__main__':
                         if j.name == action['name']:
                             current_leader = j
                             print(f"New leader : {action['name']}")
+
+                    send_propose_state_action(jobs_queue[p], (state,"dummy action"))
 
                     pass
                 elif action['type'] == "DECISION":

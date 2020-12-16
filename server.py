@@ -133,6 +133,15 @@ class Server:
         self.ackEntries[peerID] = AckEntry(None, None)
         self.ackElec[peerID] = AckEntry(None, None)
 
+
+    def proposeStateAction(self, state_action):
+        # Propose a state and action to the leader
+        # so that it can decide if the cluster
+        # accepts it.
+
+        # Vasco's stuff
+        pass
+
     def timeout_callback(self):
         with self._thread_lock:
             # do stuff here
@@ -279,6 +288,7 @@ class Server:
         action = "myRdmAction=" + actionID                      #Implement here an user action get
         self.log.append_entry(LogEntry(action, self.currentTerm))
 
+    # CALL
     def requestVote(self, term, candidateId, lastLogIndex, lastLogTerm):    #Potential issue regarding term vs lastLogTerm -> inconsitancy between paper and video from creator
         if term < self.currentTerm:
             self.peers[candidateId].requestVoteAck(self.currentTerm, False, self.name)    #may change of form with udp implementation -> peers elem being url, but same idea
@@ -295,10 +305,12 @@ class Server:
 
         self.peers[candidateId].requestVoteAck(term, False, self.name)
 
+    # CALL
     def requestVoteAck(self, term, success, senderID):
         self.ackElec[senderID].term = term
         self.ackElec[senderID].success = success
 
+    # CALL
     def appendEntries(self, term, leaderId, prevLogIndex, prevLogTerm, entries, leaderCommit):
         if term < self.currentTerm:
             self.peers[leaderId].appendEntriesAck(self.currentTerm, False, self.name)
@@ -338,6 +350,7 @@ class Server:
         self.currentTerm = term
         self.peers[leaderId].appendEntriesAck(term, True, self.name)
 
+    # CALL
     def appendEntriesAck(self, term, success, senderID):
         self.ackEntries[senderID].term = term
         self.ackEntries[senderID].success = success
