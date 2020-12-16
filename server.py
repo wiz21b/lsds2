@@ -1,5 +1,6 @@
 from datetime import datetime
 import json
+import random
 from utils import call_peer,ThreadWithReturnValue,call_peer_with_dict
 
 class ServerEncoder(json.JSONEncoder):
@@ -18,6 +19,10 @@ class LogEntry:
         self.command = command
         self.term = term
 
+class AckEntry:
+    def __init__(self, term, success):
+        self.term = term
+        self.success = success
 
 class ServerLog:
     def __init__(self, entries = []):
@@ -67,8 +72,6 @@ class ServerLog:
             yield n, self.data[n-1]
             n += 1
 
-
-
 class Server:
     def __init__(self, name):
         self.name = name
@@ -86,11 +89,28 @@ class Server:
 
         self.reset_leader_state()
         self.state = "Follower"
+        self.timeout = 0
 
-        self.peers = []
+        self.peers = dict()
 
-    def add_peer(self, peer_url):
-        self.peers.append(peer_url)
+        self.ackEntries = dict()
+        self.ackElec = dict()
+
+    def init_timeout(self, value):
+        self.timeout = value
+
+    def add_peer(self, peerID, peer_url):
+        self.peers[peerID] = peer_url
+        self.ackEntries[peerID] = AckEntry(None, None)
+        self.ackElec[peerID] = AckEntry(None, None)
+
+    def ack_entries_reset(self):
+        for server in self.peers:
+            self.ackEntries[server] = AckEntry(None, None)
+
+    def ack_elec_reset(self):
+        for server in self.peers:
+            self.ackElec[server] = AckEntry(None, None)
 
     def convert_to_follower(self):
         self.state = "Follower"
@@ -164,28 +184,70 @@ class Server:
 
             self.apply_state_machine(self.log[self.lastApplied])
 
+    def all_server_update(self):
+        if self.commitIndex > self.lastApplied:
+            #apply self.log[lastApplied].command to state machine
+            pass
+
+        return
+
+    def followers_update(self):
+        if self.state == "Follower" and self.timeout == 0:
+            self.state = "Candidate"
+            self.currentTerm += 1
+            self.votedFor = self.name
+            #reset of random timeout /!\ current evalation is purely to not have 0 and is probably not efficient
+            timeout = random.random()*10
+            self.init_timeout(timeout)
+
+            #Send election RPC to all peers
+            for server in self.peers:   
+                server.requestVote(self.currentTerm, self.name, self.log.lastIndex(), self.log.__getitem__(self.log.lastIndex()).term)
+
+    def candidates_update(self):
+        if self.state != "Candidate":
+            nbVotes = 1
+            maxTerm = self.currentTerm
+            for server in self.peers:
+                if self.ackElec[server].success == True:
+                    nbVotes += 1
+                    maxTerm = max(maxTerm, self.ackElec[server].term)
+            
+            if nbVotes > len(self.peers) + 1:
+                for server in self.peers:
+                    self.state = "Leader"
+                    #Leader send heartbeat RPC to all other servers to say he is the new leader
+                    server.appendEntries(self.currentTerm, self.name, None, None, None, self.commitIndex)
+
+            if self.stepDown == True:
+                self.state = ""
+
 
     def requestVote(self, term, candidateId, lastLogIndex, lastLogTerm):    #Potential issue regarding term vs lastLogTerm -> inconsitancy between paper and video from creator
         if term < self.currentTerm:
-            return self.currentTerm, False
+            self.peers[candidateId].requestVoteAck(self.currentTerm, False, self.name)    #may change of form with udp implementation -> peers elem being url, but same idea
 
         if self.votedFor in (None, candidateId) and \
             lastLogIndex >= self.log.lastIndex():
             self.currentTerm = term
-            return term, True
+            self.peers[candidateId].requestVoteAck(term, True, self.name)
 
-        return term, False
+        self.peers[candidateId].requestVoteAck(term, False, self.name)
+
+    def requestVoteAck(self, term, success, senderID):
+        self.ackElec[senderID].term = term
+        self.ackElec[senderID].success = success
 
     def appendEntries(self, term, leaderId, prevLogIndex, prevLogTerm, entries, leaderCommit):
         if term < self.currentTerm:
-            return self.currentTerm, False
+            self.peers[leaderId].appendEntriesAck(self.currentTerm, False, self.name)
 
         if entries == None:
             print("The RPC request received was a empty heartbeat")
-            return term, True
+            self.peers[leaderId].appendEntriesAck(term, True, self.name)
 
         if prevLogIndex > self.log.__len__() or (prevLogIndex != 0 and self.log[prevLogIndex].term != prevLogTerm):
-            return False, False
+            self.peers[leaderId].appendEntriesAck(term, False, self.name)
 
         #C'est censé déjà être le cas et si ça ne l'est pas, c'est que l'appel est mal formaté
         #entries = ServerLog(entries)
@@ -210,7 +272,11 @@ class Server:
             self.commitIndex = min(leaderCommit, self.log.lastIndex())
 
         self.currentTerm = term
-        return term, True
+        self.peers[leaderId].appendEntriesAck(term, True, self.name)
+
+    def appendEntriesAck(self, term, success, senderID):
+        self.ackEntries[senderID].term = term
+        self.ackEntries[senderID].success = success
 
 if __name__ == '__main__':
 
