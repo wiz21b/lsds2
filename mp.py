@@ -61,7 +61,20 @@ class Worker(Process):
                     #raise Exception("crash")
                     # Now process the message
 
-                    if 'STATE' not in msg:
+                    if type(msg) == dict:
+                        if msg['method'] == "requestVote":
+                            d = msg['data']
+                            self._raft_server.requestVote(
+                                d['term'], d['candidateId'],
+                                d['lastLogIndex'], d['lastLogTerm'])
+
+                        if msg['method'] == "requestVoteAck":
+                            d = msg['data']
+                            self._raft_server.requestVoteAck(
+                                d['term'], d['candidateId'],
+                                d['lastLogIndex'], d['lastLogTerm'])
+
+                    if True or 'STATE' not in msg:
                         self.log(msg)
 
                 except Empty:
@@ -93,6 +106,11 @@ class Worker(Process):
         while not self._control_queue.empty():
             self._control_queue.get()
 
+
+    def send_requestVoteAck(self, peer_name, term, success, senderID):
+        d = {"method" : "requestVoteAck",
+             "term": term, "success": success, "senderID": senderID}
+        self._sendqs[peer_name].put(d)
 
 
     def send_me_leader(self, name):

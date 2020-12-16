@@ -141,6 +141,7 @@ class Server:
             self.comm.send_me_leader(self.name)
             self.comm.send_decided_action(self.name, "dummy")
 
+
             #send_all( { "methode" : "requestVote", param...} )
 
             self._timeout_expired = True
