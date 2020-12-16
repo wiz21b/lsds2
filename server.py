@@ -1,4 +1,6 @@
+from datetime import datetime
 import json
+from utils import call_peer,ThreadWithReturnValue,call_peer_with_dict
 
 class ServerEncoder(json.JSONEncoder):
     def default( self, obj):
@@ -83,6 +85,60 @@ class Server:
         self.lastApplied = 0
 
         self.reset_leader_state()
+        self.state = "Follower"
+
+        self.peers = []
+
+    def add_peer(self, peer_url):
+        self.peers.append(peer_url)
+
+    def convert_to_follower(self):
+        self.state = "Follower"
+        self.election_period_start = datetime.now()
+        self.received_append_entries = 0
+
+    def convert_to_candidate(self):
+        self.state = "Candidate"
+        self.currentTerm += 1
+        self.votedFor = self.name
+        self.received_append_entries = 0
+
+
+        # for peer_url in self.peers:
+        #     # RPC to send requestVote @ peer_url
+
+        #         # quid des time out ?
+        #         # quid des exceptions ?
+
+
+        # lkqsjdkqs
+
+        return self.convert_to_candidate_step2, \
+            [(peer_url, 'requestVote', {"action": ""})
+             for peer_url in self.peers]
+
+    def convert_to_leader(self):
+        pass
+
+    def convert_to_candidate_step2(self, call_results):
+
+        acceptations = sum(filter(lambda t: t, call_results))
+        if acceptations > len(self.peers) / 2:
+            self.convert_to_leader()
+        elif self.received_append_entries > 0:
+            self.convert_to_follower()
+
+
+    # If timeout occurs, then thif method is called magic !
+    def election_time_out(self):
+
+        if self.state == "Follower":
+            if self.received_append_entries == 0:
+                self.convert_to_candidate()
+                return None, None
+        elif self.state == "Candidate":
+            # FIXME Start new election how to ?
+            return None, None
 
     def reset_leader_state(self):
         self.nextIndex = dict()
@@ -174,7 +230,7 @@ if __name__ == '__main__':
     #Simulating election request from server 1 (intiated by timeout as no leader currently exist)
     server1.currentTerm += 1
     server1.votedFor = "Serv1"
-    
+
     #Simulating a RPC (election) from server1 to (here server2 only) all servers
     retTerm, retSuccess = server2.requestVote(server1.currentTerm, server1.name, server1.log.lastIndex(), server1.log.__getitem__(server1.log.lastIndex()).term)
     server2.currentTerm = retTerm #Mandatory to allow old leader that lost track for a while to step down and get updated back
@@ -203,7 +259,7 @@ if __name__ == '__main__':
         assert retSuccess
 
     #Reset server2 random timeout (150 - 300ms OR >>> broadcastTime)
-    
+
     #If a server is a candidate, it should now become a follower
 
     #Now leader waits for his small timeout --> send empty heartbeat / an user inputs --> broadcast new entry
@@ -214,9 +270,9 @@ if __name__ == '__main__':
     #Reset leader heartbeat timeout
 
     #Leader verification of follower's logs update
-    if server1.log.__len__() >= server1.nextIndex["serverTwo"]: 
+    if server1.log.__len__() >= server1.nextIndex["serverTwo"]:
         #Simulating reaction from leader --> RPC to followers
-        entries = server1.log.getItemFrom(server1.nextIndex["serverTwo"]) 
+        entries = server1.log.getItemFrom(server1.nextIndex["serverTwo"])
         retTermServ2, retSuccessServ2 = server2.appendEntries(server1.currentTerm, server1.name, server1.nextIndex["serverTwo"]-1,
                                                                 entries[0].term, entries, server1.commitIndex)
         server1.currentTerm = retTermServ2
@@ -226,7 +282,7 @@ if __name__ == '__main__':
         print("Return values: ")
         print("retTermServ2 =", retTermServ2)
         print("retSuccessServ2 =", retSuccessServ2)
-        
+
         #If return is False, then the next index for the server X stored in the leader is still too big, retry at next iteration with decremented index
         if not retSuccessServ2:
             server1.nextIndex["serverTwo"] -= 1
