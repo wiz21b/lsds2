@@ -105,6 +105,18 @@ class Server:
 
         self.ackEntries = dict()
         self.ackElec = dict()
+        self._timer_thread = None
+
+
+    def start_timer(self, duration):
+
+        if self._timer_thread is None:
+            self._timer_thread = threading.Timer(10, self.timeout)
+        else:
+            self._timer_thread.cancel()
+
+        self._timer_thread.start()
+
     def start(self):
         self.start_timer(4)
 
@@ -234,7 +246,7 @@ class Server:
             self.init_timeout(timeout)
 
             #Send election RPC to all peers
-            for server in self.peers:   
+            for server in self.peers:
                 server.requestVote(self.currentTerm, self.name, self.log.lastIndex(), self.log.__getitem__(self.log.lastIndex()).term)
 
     def candidates_update(self):
@@ -245,7 +257,7 @@ class Server:
                 if self.ackElec[server].success == True:
                     nbVotes += 1
                     maxTerm = max(maxTerm, self.ackElec[server].term)
-            
+
             if nbVotes > len(self.peers) + 1:
                 for server in self.peers:
                     self.state = "Leader"
@@ -263,13 +275,13 @@ class Server:
                 self.init_timeout(timeout)
 
                 #Send new election RPC to all peers (prevent tie or fail election to black the system)
-                for server in self.peers:   
+                for server in self.peers:
                     server.requestVote(self.currentTerm, self.name, self.log.lastIndex(), self.log.__getitem__(self.log.lastIndex()).term)
-                
+
     def leaders_update(self):
         actionID = str(int(random.random()*10))                 #Implement here an user action get
         action = "myRdmAction=" + actionID                      #Implement here an user action get
-        self.log.append_entry(LogEntry(action, self.currentTerm)
+        self.log.append_entry(LogEntry(action, self.currentTerm))
 
     def requestVote(self, term, candidateId, lastLogIndex, lastLogTerm):    #Potential issue regarding term vs lastLogTerm -> inconsitancy between paper and video from creator
         if term < self.currentTerm:
@@ -326,7 +338,7 @@ class Server:
 
         if self.state == "Candidate":
             self.stepDown = True
-        
+
         self.currentTerm = term
         self.peers[leaderId].appendEntriesAck(term, True, self.name)
 
