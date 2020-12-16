@@ -202,6 +202,7 @@ if __name__ == '__main__':
     timestep = 0
     old_time_step = -1
     old_state = None
+    current_leader = None
 
     try:
         while True:
