@@ -1,3 +1,4 @@
+import sys
 import traceback
 import logging
 import random
@@ -26,7 +27,6 @@ def logger_process(queue):
             fo.write(f"{record}\n")
 
         except Exception:
-            import sys, traceback
             print('Whoops! Problem:', file=sys.stderr)
             traceback.print_exc(file=sys.stderr)
 
@@ -41,6 +41,7 @@ def logger_process(queue):
 class Worker(Process):
 
     def run(self):
+        self._raft_server = Server(self.name)
         self._raft_server.set_comm(self)
         self._raft_server.start()
 
@@ -130,8 +131,6 @@ class Worker(Process):
     def set_controle_queue(self, q):
         self._control_queue = q
 
-    def set_raft_server(self, s):
-        self._raft_server = s
 
 
 
@@ -157,8 +156,6 @@ if __name__ == '__main__':
 
     leader_queue = Queue()
 
-    raft_server = Server("Test1")
-
     for i in range(len(flight_computers)):
 
         recq = Queue()
@@ -168,7 +165,6 @@ if __name__ == '__main__':
         jobs_queue[p] = recq
         control_queue[p] = Queue()
 
-        p.set_raft_server(raft_server)
         p.set_computer(flight_computers[i % len(flight_computers)])
 
         p.set_leader_queue(leader_queue)
@@ -247,6 +243,7 @@ if __name__ == '__main__':
                 action = leader_queue.get(block=False)
 
                 if action['type'] == "LEADER_ANNONCE":
+                    print(f"New leader : {action}")
                     # change leader
                     pass
                 elif action['type'] == "DECISION":
