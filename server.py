@@ -1,7 +1,14 @@
+import threading
 from datetime import datetime
 import json
 import random
 from utils import call_peer,ThreadWithReturnValue,call_peer_with_dict
+
+
+def time_out_action(raft_server):
+    with raft_server.thread_lock:
+        raft_server.election_time_out()
+
 
 class ServerEncoder(json.JSONEncoder):
     def default( self, obj):
@@ -74,6 +81,8 @@ class ServerLog:
 
 class Server:
     def __init__(self, name):
+        self._thread_lock = threading.Lock()
+
         self.name = name
 
         self.currentTerm = 0
@@ -90,6 +99,7 @@ class Server:
         self.reset_leader_state()
         self.state = "Follower"
         self.timeout = 0
+        self.stepDown = False
 
         self.peers = dict()
 
@@ -151,6 +161,8 @@ class Server:
 
     # If timeout occurs, then thif method is called magic !
     def election_time_out(self):
+        print("TIMEOUT")
+        return
 
         if self.state == "Follower":
             if self.received_append_entries == 0:
@@ -220,15 +232,35 @@ class Server:
                     server.appendEntries(self.currentTerm, self.name, None, None, None, self.commitIndex)
 
             if self.stepDown == True:
-                self.state = ""
+                self.state = "Follower"
+                self.stepDown = False
 
+            if self.timeout == 0:
+                self.currentTerm += 1
+                #reset of random timeout /!\ current evalation is purely to not have 0 and is probably not efficient
+                timeout = random.random()*10
+                self.init_timeout(timeout)
+
+                #Send new election RPC to all peers (prevent tie or fail election to black the system)
+                for server in self.peers:   
+                    server.requestVote(self.currentTerm, self.name, self.log.lastIndex(), self.log.__getitem__(self.log.lastIndex()).term)
+                
+    def leaders_update(self):
+        actionID = str(int(random.random()*10))                 #Implement here an user action get
+        action = "myRdmAction=" + actionID                      #Implement here an user action get
+        self.log.append_entry(LogEntry(action, self.currentTerm)
 
     def requestVote(self, term, candidateId, lastLogIndex, lastLogTerm):    #Potential issue regarding term vs lastLogTerm -> inconsitancy between paper and video from creator
         if term < self.currentTerm:
             self.peers[candidateId].requestVoteAck(self.currentTerm, False, self.name)    #may change of form with udp implementation -> peers elem being url, but same idea
 
         if self.votedFor in (None, candidateId) and \
-            lastLogIndex >= self.log.lastIndex():
+            lastLogIndex >= self.log.lastIndex() and \
+            term == self.currentTerm:
+            self.currentTerm = term
+            self.peers[candidateId].requestVoteAck(term, True, self.name)
+
+        if term > self.currentTerm:
             self.currentTerm = term
             self.peers[candidateId].requestVoteAck(term, True, self.name)
 
@@ -271,6 +303,9 @@ class Server:
         if leaderCommit > self.commitIndex:
             self.commitIndex = min(leaderCommit, self.log.lastIndex())
 
+        if self.state == "Candidate":
+            self.stepDown = True
+        
         self.currentTerm = term
         self.peers[leaderId].appendEntriesAck(term, True, self.name)
 
