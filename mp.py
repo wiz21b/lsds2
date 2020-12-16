@@ -6,6 +6,7 @@ from datetime import datetime
 from multiprocessing import Process, Queue
 from queue import Empty
 
+
 from starter_code.withoutksp import allocate_flight_computers, commandline_args, readout_state
 
 
@@ -112,8 +113,11 @@ class Worker(Process):
     def set_logging_queue(self, q):
         self._logging = q
 
-    def set_controle_queue( self, q):
+    def set_controle_queue(self, q):
         self._control_queue = q
+
+
+
 
 if __name__ == '__main__':
     # from multiprocessing import set_start_method
@@ -121,7 +125,7 @@ if __name__ == '__main__':
 
     logging_queue = Queue()
     log_listener = Process(target=logger_process,
-                                       args=(logging_queue,))
+                           args=(logging_queue,))
     log_listener.start()
 
     flight_computers = allocate_flight_computers(commandline_args(),timestep=0)
