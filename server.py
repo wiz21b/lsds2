@@ -103,16 +103,19 @@ class Server:
     def start_timer(self, duration):
 
         if self._timer_thread is None:
-            self._timer_thread = threading.Timer(10, self.timeout)
+            self._timer_thread = threading.Timer(duration, self.timeout)
         else:
             self._timer_thread.cancel()
+            self._timer_thread = threading.Timer(duration, self.timeout)
 
+        self._timeout_expired = False
         self._timer_thread.start()
 
     def timeout(self):
         with self._thread_lock:
             # do stuff here
-            print("Tiemout!")
+            print("Time out!")
+            self._timeout_expired = True
 
 
     def add_peer(self, peer_url):
