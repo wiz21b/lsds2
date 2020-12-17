@@ -83,9 +83,9 @@ class ServerLog:
             n += 1
 
 class Server:
-    def __init__(self, name, flight_computer):
+    def __init__(self, name, flight_computer, log):
         self._thread_lock = threading.Lock()
-
+        self._logging = log
         self.flight_computer = flight_computer
         self.name = name
 
@@ -112,14 +112,26 @@ class Server:
         self._timer_thread = None
         self.start_timer(5)
 
-        self._heartbeat_timer_thread = threading.Timer(1, self.heartbeat_callback)
+        self._heartbeat_timer_thread = threading.Timer(5, self.heartbeat_callback)
+        self._heartbeat_timer_thread.start()
+
+    def logger(self, msg):
+        #return
+        assert msg is not None
+
+        self._logging.put(f"{datetime.now()} {self.name}: {msg}")
 
     def heartbeat_callback(self):
-        self._heartbeat_timer_thread.join()
-        if self.state == "Leader":
-            self._heartbeat_timer_thread = threading.Timer(1, self.heartbeat_callback)
+        print("hbjoin")
+        # self._heartbeat_timer_thread.join()
+        if True or self.state == "Leader":
+            self._heartbeat_timer_thread = threading.Timer(5, self.heartbeat_callback)
+            self._heartbeat_timer_thread.start()
+            print("wi")
+            self.logger("test")
+            # for i in :
             #self.comm.send_all(appendEntries(self.currentTerm, self.name, None, None, None, self.commitIndex))
-
+            # self.log("test")
 
     def start_timer(self, duration):
         if self._timer_thread:
@@ -134,6 +146,8 @@ class Server:
     def stop(self):
         if self._timer_thread:
             self._timer_thread.join()
+        if self._heartbeat_timer_thread:
+            self._heartbeat_timer_thread.join()
 
     def set_comm(self, worker):
         self.comm = worker

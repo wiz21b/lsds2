@@ -50,7 +50,7 @@ def logger_process(queue):
 class Worker(Process):
 
     def run(self):
-        self._raft_server = Server(self.name, self._computer)
+        self._raft_server = Server(self.name, self._computer, self._logging)
         self._raft_server.set_comm(self)
         self._raft_server.start()
 
