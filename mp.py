@@ -61,11 +61,30 @@ class Worker(Process):
                     #raise Exception("crash")
                     # Now process the message
 
-                    if True or 'STATE' not in msg:
+                    if type(msg) == dict and 'method' in msg:
+                        if msg['method'] == "requestVote":
+                            d = msg['data']
+                            self._raft_server.requestVote(
+                                d['term'], d['candidateId'],
+                                d['lastLogIndex'], d['lastLogTerm'])
+
+                        if msg['method'] == "requestVoteAck":
+                            d = msg['data']
+                            self._raft_server.requestVoteAck(
+                                d['term'], d['candidateId'],
+                                d['lastLogIndex'], d['lastLogTerm'])
+
+                        if msg['method'] == "proposeStateAction":
+                            self._raft_server.proposeStateAction(
+                                msg['state_action'])
+
+
+                    if 'STATE' not in msg:
                         self.log(msg)
 
                 except Empty:
-                    self.log("Empty queue ?")
+                    pass
+                    #self.log("Empty queue ?")
 
                 try:
                     #sleep(0.001)
@@ -93,10 +112,19 @@ class Worker(Process):
             self._control_queue.get()
 
 
+    def send_requestVoteAck(self, peer_name, term, success, senderID):
+        d = {"method" : "requestVoteAck",
+             "term": term, "success": success, "senderID": senderID}
+        self._sendqs[peer_name].put(d)
+
 
     def send_me_leader(self, name):
         self._leader_queue.put({"type" : "LEADER_ANNONCE",
                                 "name" : name})
+
+    def send_decided_action(self, name, action):
+        self._leader_queue.put({"type" : "DECISION",
+                                "action" : action})
 
     def log(self, msg):
         #return
@@ -133,6 +161,10 @@ class Worker(Process):
 
 
 
+def send_propose_state_action(queue, state_action):
+    print("send_propose_state_action")
+    queue.put({"method" : "proposeStateAction",
+               "state_action" : state_action})
 
 if __name__ == '__main__':
     # from multiprocessing import set_start_method
@@ -197,6 +229,7 @@ if __name__ == '__main__':
     timestep = 0
     old_time_step = -1
     old_state = None
+    current_leader = None
 
     try:
         while True:
@@ -243,10 +276,17 @@ if __name__ == '__main__':
                 action = leader_queue.get(block=False)
 
                 if action['type'] == "LEADER_ANNONCE":
-                    print(f"New leader : {action}")
                     # change leader
+                    for j in jobs:
+                        if j.name == action['name']:
+                            current_leader = j
+                            print(f"New leader : {action['name']}")
+
+                    send_propose_state_action(jobs_queue[p], (state,"dummy action"))
+
                     pass
                 elif action['type'] == "DECISION":
+                    print(f"Decided action : {action}")
                     # do action
                     pass
 
