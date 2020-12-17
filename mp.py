@@ -41,7 +41,7 @@ def logger_process(queue):
 class Worker(Process):
 
     def run(self):
-        self._raft_server = Server(self.name)
+        self._raft_server = Server(self.name, self._computer)
         self._raft_server.set_comm(self)
         self._raft_server.start()
 
@@ -77,6 +77,10 @@ class Worker(Process):
                         if msg['method'] == "proposeStateAction":
                             self._raft_server.proposeStateAction(
                                 msg['state_action'])
+
+                        if msg['method'] == 'send_sample_next_action':
+                            self._raft_server.sample_next_action()
+
 
 
                     if 'STATE' not in msg:
@@ -122,6 +126,10 @@ class Worker(Process):
         self._leader_queue.put({"type" : "LEADER_ANNONCE",
                                 "name" : name})
 
+    def send_sampled_action(self, action):
+        self._leader_queue.put({"type" : "SAMPLED_ACTION",
+                                "action" : action})
+
     def send_decided_action(self, is_action_decided):
         self._leader_queue.put({"type" : "DECISION",
                                 "is_action_decided" : is_action_decided})
@@ -166,6 +174,8 @@ def send_propose_state_action(job_queue, state_action):
     job_queue.put({"method" : "proposeStateAction",
                    "state_action" : state_action})
 
+def send_sample_next_action(job_queue):
+    job_queue.put({"method" : "send_sample_next_action"})
 
 def init_logging():
     logging_queue = Queue()
@@ -207,9 +217,7 @@ def init_workers(flight_computers, logging_queue):
         control_queue[p] = Queue()
 
         p.set_computer(flight_computers[i % len(flight_computers)])
-
         p.set_leader_queue(leader_queue)
-
         p.set_logging_queue(logging_queue)
 
         # Set destination queue
@@ -357,14 +365,19 @@ if __name__ == '__main__':
                             current_leader = j
                             print(f"New leader : {action['name']}")
 
-                    send_propose_state_action(
-                        jobs_queue[current_leader], (state,"dummy action"))
+                    send_sample_next_action(
+                        jobs_queue[current_leader])
 
                     pass
                 elif action['type'] == "DECISION":
                     print(f"Decided action : {action}")
                     # do action
                     pass
+                elif action['type'] == "SAMPLED_ACTION":
+                    print(f"Sampled action : {action['action']}")
+
+                    send_propose_state_action(
+                        jobs_queue[current_leader], (state, action['action']))
 
             except Empty:
                 pass

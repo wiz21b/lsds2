@@ -83,9 +83,10 @@ class ServerLog:
             n += 1
 
 class Server:
-    def __init__(self, name):
+    def __init__(self, name, flight_computer):
         self._thread_lock = threading.Lock()
 
+        self.flight_computer = flight_computer
         self.name = name
 
         self.currentTerm = 0
@@ -136,6 +137,13 @@ class Server:
         self.ackEntries[peerID] = AckEntry(None, None)
         self.ackElec[peerID] = AckEntry(None, None)
 
+    def sample_next_action(self):
+        # The flight computer of the *leader* selects the action
+        # he'd do, based on the state that was
+        # commited by RAFT
+
+        action = self.flight_computer.sample_next_action()
+        self.comm.send_sampled_action(action)
 
     def proposeStateAction(self, state_action):
         # Client proposes a state and action to the leader
@@ -144,10 +152,10 @@ class Server:
 
         # Vasco's stuff
 
-        # To answer to the client :
-        # self.comm.send_decided_action(bool):
-
-        pass
+        state, action = state_action
+        # Example code
+        self.flight_computer.decide_on_action(action)
+        self.comm.send_decided_action(True)
 
     def timeout_callback(self):
         with self._thread_lock:
@@ -155,8 +163,6 @@ class Server:
             print("Time out!")
 
             self.comm.send_me_leader(self.name)
-            self.comm.send_decided_action(True)
-
 
             #send_all( { "methode" : "requestVote", param...} )
 
