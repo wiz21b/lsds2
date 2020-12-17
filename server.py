@@ -144,9 +144,13 @@ class Server:
         self.start_timer(4)
 
     def stop(self):
+        # Cancels are necessary to properly stop the timer
+        # (and release thread resources)
         if self._timer_thread:
+            self._timer_thread.cancel()
             self._timer_thread.join()
         if self._heartbeat_timer_thread:
+            self._heartbeat_timer_thread.cancel()
             self._heartbeat_timer_thread.join()
 
     def set_comm(self, worker):
