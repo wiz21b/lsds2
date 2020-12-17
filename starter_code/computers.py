@@ -104,6 +104,7 @@ class FlightComputer:
         return self.stage_handler()
 
     def decide_on_state(self, state):
+
         acceptations = [p.acceptable_state(state) for p in self.peers]
         decided = sum(acceptations) / (len(self.peers) + 1) > 0.5
 

@@ -161,27 +161,36 @@ class Worker(Process):
 
 
 
-def send_propose_state_action(queue, state_action):
+def send_propose_state_action(job_queue, state_action):
     print("send_propose_state_action")
-    queue.put({"method" : "proposeStateAction",
-               "state_action" : state_action})
+    job_queue.put({"method" : "proposeStateAction",
+                   "state_action" : state_action})
 
-if __name__ == '__main__':
-    # from multiprocessing import set_start_method
-    # set_start_method("spawn")
 
+def init_logging():
     logging_queue = Queue()
     log_listener = Process(target=logger_process,
                            args=(logging_queue,))
     log_listener.start()
 
-    flight_computers = allocate_flight_computers(commandline_args(),timestep=0)
 
     logging.basicConfig(
         format='%(asctime)s.%(msecs)03d %(levelname)-8s %(message)s',
         level=logging.DEBUG,
         datefmt='%H:%M:%S')
 
+    return logging_queue, log_listener
+
+
+
+def shutdown_logging():
+    while not logging_queue.empty():
+        logging_queue.get(block=True)
+    logging_queue.close()
+    logging.info("Done")
+
+
+def init_workers(flight_computers, logging_queue):
     jobs = []
     jobs_queue = dict()
     control_queue = dict()
@@ -220,6 +229,72 @@ if __name__ == '__main__':
 
         print(f"For sender {sender.name}, receivers queues for {send_queues.keys()}")
         sender.set_sending_queues(send_queues)
+
+
+    return jobs, jobs_queue, control_queue, leader_queue
+
+
+def shut_down_workers(jobs, control_queue, jobs_queue, leader_queue):
+    # https://stackoverflow.com/questions/34506638/how-to-register-atexit-function-in-pythons-multiprocessing-subprocess
+
+    # At this point, jobs may still be sending messages to each other
+    # So what we do is we first read all messages to clear the queue
+    # and put a "STOP" right after. We basically overflow each
+    # process with stop message and prevent them of working. In
+    # the end, that ought to work. Ideally we should have
+    # a stop channel to complete this
+
+    logging.info("Requesting process to stop")
+    for j in jobs:
+        if j.is_alive():
+            control_queue[j].put("STOP")
+
+    # Wait for control message to trigger process exit.
+    # This will work only if the process can handle
+    # the control message :-(
+
+    while any([j.is_alive() for j in jobs]):
+        sleep(1)
+
+    # We clear all remaining messages.
+    logging.info("Clearing messages")
+
+
+
+    for j in jobs:
+        jobs_queue[j].close()
+        jobs_queue[j].join_thread()
+        control_queue[j].close()
+        control_queue[j].join_thread()
+
+    logging.info("Killing logging process")
+    logging_queue.put_nowait(None)
+    while log_listener.is_alive():
+        logging.info("Log listener alive")
+        sleep(1)
+
+    # shutdown_logging()
+
+    logging.info("emptying leader queue")
+    while not leader_queue.empty():
+        leader_queue.get(block=True)
+    leader_queue.close()
+
+    logging.info("Joining processes")
+    for j in jobs:
+        j.join()
+    log_listener.join()
+
+
+if __name__ == '__main__':
+    # from multiprocessing import set_start_method
+    # set_start_method("spawn")
+
+    logging_queue, log_listener = init_logging()
+
+    flight_computers = allocate_flight_computers(commandline_args(),timestep=0)
+
+    jobs, jobs_queue, control_queue, leader_queue = init_workers(flight_computers, logging_queue)
 
     for j in jobs:
         j.start()
@@ -282,7 +357,8 @@ if __name__ == '__main__':
                             current_leader = j
                             print(f"New leader : {action['name']}")
 
-                    send_propose_state_action(jobs_queue[p], (state,"dummy action"))
+                    send_propose_state_action(
+                        jobs_queue[current_leader], (state,"dummy action"))
 
                     pass
                 elif action['type'] == "DECISION":
@@ -298,58 +374,6 @@ if __name__ == '__main__':
 
     logging.info("Experiment complete")
 
-    # https://stackoverflow.com/questions/34506638/how-to-register-atexit-function-in-pythons-multiprocessing-subprocess
-
-
-
-    # At this point, jobs may still be sending messages to each other
-    # So what we do is we first read all messages to clear the queue
-    # and put a "STOP" right after. We basically overflow each
-    # process with stop message and prevent them of working. In
-    # the end, that ought to work. Ideally we should have
-    # a stop channel to complete this
-
-    logging.info("Requesting process to stop")
-    for j in jobs:
-        if j.is_alive():
-            control_queue[j].put("STOP")
-
-    # Wait for control message to trigger process exit.
-    # This will work only if the process can handle
-    # the control message :-(
-
-    while any([j.is_alive() for j in jobs]):
-        sleep(1)
-
-    # We clear all remaining messages.
-    logging.info("Clearing messages")
-
-
-
-    for j in jobs:
-        jobs_queue[j].close()
-        jobs_queue[j].join_thread()
-        control_queue[j].close()
-        control_queue[j].join_thread()
-
-    logging.info("Killing logging process")
-    logging_queue.put_nowait(None)
-    while log_listener.is_alive():
-        logging.info("Log listener alive")
-        sleep(1)
-    while not logging_queue.empty():
-        logging_queue.get(block=True)
-    logging_queue.close()
-
-    logging.info("emptying leader queue")
-    while not leader_queue.empty():
-        leader_queue.get(block=True)
-    leader_queue.close()
-
-    logging.info("Joining processes")
-    for j in jobs:
-        j.join()
-    log_listener.join()
-
-    logging.info("Done")
+    shut_down_workers(jobs, control_queue, jobs_queue, leader_queue)
+    shutdown_logging()
     exit()
