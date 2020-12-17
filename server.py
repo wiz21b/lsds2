@@ -122,13 +122,11 @@ class Server:
         self._logging.put(f"{datetime.now()} {self.name}: {msg}")
 
     def heartbeat_callback(self):
-        print("hbjoin")
         # self._heartbeat_timer_thread.join()
         if True or self.state == "Leader":
             self._heartbeat_timer_thread = threading.Timer(5, self.heartbeat_callback)
             self._heartbeat_timer_thread.start()
-            print("wi")
-            self.logger("test")
+
             # for i in :
             #self.comm.send_all(appendEntries(self.currentTerm, self.name, None, None, None, self.commitIndex))
             # self.log("test")
@@ -152,6 +150,8 @@ class Server:
         if self._heartbeat_timer_thread:
             self._heartbeat_timer_thread.cancel()
             self._heartbeat_timer_thread.join()
+
+
 
     def set_comm(self, worker):
         self.comm = worker
@@ -177,7 +177,6 @@ class Server:
     def decide_on_state(self, state):
         # The client requests the leader to apply RAFT
         # to decide on the give state
-
         state_decided = self.flight_computer.decide_on_state(state)
         self.comm.send_decided_state(state)
 
@@ -373,38 +372,51 @@ class Server:
         self.candidates_update()
         self.leaders_update()
 
-    # CALL
+    #test t-bow
     def requestVote(self, term, candidateId, lastLogIndex, lastLogTerm):
+        print(self.name, "requestVote dans server.py")
         if term < self.currentTerm:
-            self.peers[candidateId].requestVoteAck(self.currentTerm, False, self.name)
-
+            self.comm.send_requestVoteAck(self.peers[candidateId] , currentTerm, False, self.name)
         self.currentTerm = term
 
         if self.votedFor in (None, candidateId) and \
             lastLogIndex >= self.log.lastIndex():
-            self.peers[candidateId].requestVoteAck(term, True, self.name)
+            self.comm.send_requestVoteAck(self.peers[candidateId] , term, True, self.name)
+        self.comm.send_requestVoteAck(self.peers[candidateId], term, False, self.name)
 
-        self.peers[candidateId].requestVoteAck(term, False, self.name)
+    #Vasco
+    # CALL 
+    # def requestVote(self, term, candidateId, lastLogIndex, lastLogTerm):
+    #     if term < self.currentTerm:
+    #         self.peers[candidateId].requestVoteAck(self.currentTerm, False, self.name)
+
+    #     self.currentTerm = term
+
+    #     if self.votedFor in (None, candidateId) and \
+    #         lastLogIndex >= self.log.lastIndex():
+    #         self.peers[candidateId].requestVoteAck(term, True, self.name)
+
+    #     self.peers[candidateId].requestVoteAck(term, False, self.name)
 
     # CALL
     def requestVoteAck(self, term, success, senderID):
+        print(self.name, "requestVoteAck dans server.py")
         self.ackElec[senderID].term = term
         self.ackElec[senderID].success = success
 
-    # CALL
+
+
     def appendEntries(self, term, leaderId, prevLogIndex, prevLogTerm, entries, leaderCommit):
         if term < self.currentTerm:
-            self.peers[leaderId].appendEntriesAck(self.currentTerm, False, self.log.lastIndex(), self.name)
+            self.comm.send_appendEntriesAck(self.peers[leaderId], self.currentTerm, False, self.log.lastIndex(), self.name)
 
         if entries == None:
             print("The RPC request received was a empty heartbeat")
-            self.peers[leaderId].appendEntriesAck(term, True, self.log.lastIndex(), self.name)
-
+            self.comm.send_appendEntriesAck(self.peers[leaderId], term, True, self.log.lastIndex(), self.name)
+        
         if prevLogIndex > self.log.__len__() or (prevLogIndex != 0 and self.log[prevLogIndex].term != prevLogTerm):
-            self.peers[leaderId].appendEntriesAck(term, False, self.log.lastIndex(), self.name)
+            self.comm.send_appendEntriesAck(self.peers[leaderId], term, False, self.log.lastIndex(), self.name)
 
-        #C'est censé déjà être le cas et si ça ne l'est pas, c'est que l'appel est mal formaté
-        #entries = ServerLog(entries)
 
         i = prevLogIndex
         if prevLogIndex == 0:
@@ -429,7 +441,48 @@ class Server:
             self.stepDown = True
 
         self.currentTerm = term
-        self.peers[leaderId].appendEntriesAck(term, True, self.log.lastIndex(), self.name)
+        self.comm.send_appendEntriesAck(self.peers[leaderId], term, True, self.log.lastIndex(), self.name)
+
+    # Vasco
+    # CALL
+    # def appendEntries(self, term, leaderId, prevLogIndex, prevLogTerm, entries, leaderCommit):
+    #     if term < self.currentTerm:
+    #         self.peers[leaderId].appendEntriesAck(self.currentTerm, False, self.log.lastIndex(), self.name)
+
+    #     if entries == None:
+    #         print("The RPC request received was a empty heartbeat")
+    #         self.peers[leaderId].appendEntriesAck(term, True, self.log.lastIndex(), self.name)
+
+    #     if prevLogIndex > self.log.__len__() or (prevLogIndex != 0 and self.log[prevLogIndex].term != prevLogTerm):
+    #         self.peers[leaderId].appendEntriesAck(term, False, self.log.lastIndex(), self.name)
+
+    #     #C'est censé déjà être le cas et si ça ne l'est pas, c'est que l'appel est mal formaté
+    #     #entries = ServerLog(entries)
+
+    #     i = prevLogIndex
+    #     if prevLogIndex == 0:
+    #         i += 1
+    #     else:
+    #         for ndx, new_log_entry in enumerate(entries):
+    #             if self.log[i].term != entries[ndx].term:
+    #                 self.log.clear_from(ndx)
+    #                 # ndx is growing => if we clear from here there
+    #                 # is nothing left to delete from self.log
+    #                 break
+    #             i += 1
+
+    #     for ndx, new_log_entry in enumerate(entries):
+    #         if ndx >= i - prevLogIndex:
+    #             self.log.append_entry(entries[ndx])
+
+    #     if leaderCommit > self.commitIndex:
+    #         self.commitIndex = min(leaderCommit, self.log.lastIndex())
+
+    #     if self.state == "Candidate":
+    #         self.stepDown = True
+
+    #     self.currentTerm = term
+    #     self.peers[leaderId].appendEntriesAck(term, True, self.log.lastIndex(), self.name)
 
     # CALL
     def appendEntriesAck(self, term, success, lastIndex, senderID):
