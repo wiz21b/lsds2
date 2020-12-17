@@ -145,6 +145,16 @@ class Server:
         action = self.flight_computer.sample_next_action()
         self.comm.send_sampled_action(action)
 
+
+    def decide_on_state(self, state):
+        # The client requests the leader to apply RAFT
+        # to decide on the give state
+
+        state_decided = self.flight_computer.decide_on_state(state)
+        self.comm.send_decided_state(state)
+
+
+
     def proposeStateAction(self, state_action):
         # Client proposes a state and action to the leader
         # so that it can decide if the cluster
@@ -154,15 +164,18 @@ class Server:
 
         state, action = state_action
         # Example code
-        self.flight_computer.decide_on_action(action)
-        self.comm.send_decided_action(True)
+        has_decided = self.flight_computer.decide_on_action(action)
+
+        if has_decided:
+            self.comm.send_decided_action(action)
+        else:
+            self.comm.send_decided_action(False)
 
     def timeout_callback(self):
         with self._thread_lock:
             # do stuff here
-            print("Time out!")
 
-            self.comm.send_me_leader(self.name)
+            #self.comm.send_me_leader(self.name)
 
             #send_all( { "methode" : "requestVote", param...} )
 

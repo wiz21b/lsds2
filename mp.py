@@ -1,4 +1,5 @@
 import sys
+import enum
 import traceback
 import logging
 import random
@@ -11,7 +12,15 @@ from queue import Empty
 
 from starter_code.withoutksp import allocate_flight_computers, commandline_args, readout_state
 
+from starter_code.withoutksp import actions as expected_actions
 from server import Server
+
+class ClientStates(enum.Enum):
+    Idle = 1
+    SamplingAction = 2
+    SampledAction = 3
+    DecidedState = 4
+    DecidedAction = 4
 
 def logger_process(queue):
     fo = open("log","w")
@@ -68,23 +77,27 @@ class Worker(Process):
                                 d['term'], d['candidateId'],
                                 d['lastLogIndex'], d['lastLogTerm'])
 
-                        if msg['method'] == "requestVoteAck":
+                        elif msg['method'] == "requestVoteAck":
                             d = msg['data']
                             self._raft_server.requestVoteAck(
                                 d['term'], d['candidateId'],
                                 d['lastLogIndex'], d['lastLogTerm'])
 
-                        if msg['method'] == "proposeStateAction":
+                        elif msg['method'] == "proposeStateAction":
                             self._raft_server.proposeStateAction(
                                 msg['state_action'])
 
-                        if msg['method'] == 'send_sample_next_action':
+                        elif msg['method'] == 'send_sample_next_action':
                             self._raft_server.sample_next_action()
 
+                        elif msg['method'] == "decide_on_state":
+                            self._raft_server.decide_on_state(
+                                msg['state'])
 
 
-                    if 'STATE' not in msg:
-                        self.log(msg)
+
+                    # if 'STATE' not in msg:
+                    #     self.log(msg)
 
                 except Empty:
                     pass
@@ -130,9 +143,17 @@ class Worker(Process):
         self._leader_queue.put({"type" : "SAMPLED_ACTION",
                                 "action" : action})
 
-    def send_decided_action(self, is_action_decided):
+    def send_decided_action(self, action_decided):
         self._leader_queue.put({"type" : "DECISION",
-                                "is_action_decided" : is_action_decided})
+                                "action_decided" : action_decided})
+
+    def send_decided_action(self, action_decided):
+        self._leader_queue.put({"type" : "DECISION",
+                                "action_decided" : action_decided})
+
+    def send_decided_state(self, state_decided):
+        self._leader_queue.put({"type" : "DECISION_STATE",
+                                "state_decided" : state_decided})
 
     def log(self, msg):
         #return
@@ -169,13 +190,17 @@ class Worker(Process):
 
 
 
-def send_propose_state_action(job_queue, state_action):
-    print("send_propose_state_action")
+def send_propose_state_action(job_queue, state, action):
     job_queue.put({"method" : "proposeStateAction",
-                   "state_action" : state_action})
+                   "state_action" : (state, action)})
 
 def send_sample_next_action(job_queue):
     job_queue.put({"method" : "send_sample_next_action"})
+
+
+def send_decide_on_state(job_queue, state):
+    job_queue.put({"method" : "decide_on_state",
+                   "state" : state})
 
 def init_logging():
     logging_queue = Queue()
@@ -235,7 +260,7 @@ def init_workers(flight_computers, logging_queue):
             if sender != receiver:
                 send_queues[receiver.name] = receiver._recq
 
-        print(f"For sender {sender.name}, receivers queues for {send_queues.keys()}")
+        #print(f"For sender {sender.name}, receivers queues for {send_queues.keys()}")
         sender.set_sending_queues(send_queues)
 
 
@@ -294,9 +319,30 @@ def shut_down_workers(jobs, control_queue, jobs_queue, leader_queue):
     log_listener.join()
 
 
+def test_action(expected_actions, action, timestep):
+    logging.debug(f"Tested action at {timestep} {action}")
+
+    TOLERANCE = 100
+    for i in range(2*TOLERANCE):
+        fail = False
+        expected_action = expected_actions[max(0, timestep+i-TOLERANCE)]
+        for k in action.keys():
+            if k in expected_action and action[k] != expected_action[k]:
+                fail = True
+                break
+
+        if not fail:
+            return True
+
+    logging.error(f"Expected action wrong at time step {timestep}")
+    return False
+
+
 if __name__ == '__main__':
     # from multiprocessing import set_start_method
     # set_start_method("spawn")
+
+    logging.basicConfig(level=logging.WARNING)
 
     logging_queue, log_listener = init_logging()
 
@@ -312,14 +358,24 @@ if __name__ == '__main__':
     timestep = 0
     old_time_step = -1
     old_state = None
-    current_leader = None
 
+    last_log_timestep = 0
+    good_decisions = 0
+
+    current_leader = jobs[0]
+    decided_state, sample_action, timestep_sm = None, None, None
+
+    client_state = ClientStates.Idle
+
+    logging.info("Clear for take off")
+
+    TIMESTEP = 0.001
     try:
         while True:
-            sleep(0.00005)
+            sleep(0.0005)
 
             delta = datetime.now() - start_time
-            timestep = int((delta.seconds + delta.microseconds/1000000) / 0.0001)
+            timestep = int((delta.seconds + delta.microseconds/1000000) / TIMESTEP)
 
             if timestep > old_time_step:
                 old_time_step = timestep
@@ -331,24 +387,15 @@ if __name__ == '__main__':
                     # No more instrument data, end of experiment,
                     break
 
-                if timestep % 10000 < 3 and old_state != state:
-                    print(f"TICK {timestep}/84000 {state}")
+            if current_leader:
 
-                if 3400 < timestep < 3440:
-                    to_kill = jobs[0]
+                if client_state == ClientStates.Idle:
+                    timestep_sm = timestep
+                    logging.debug(f"[{timestep} - {timestep_sm}] asking state decision : {state}")
+                    send_decide_on_state(jobs_queue[current_leader], state)
 
-                    if to_kill.is_alive():
-                        logging.warning(f"Crashing job '{to_kill.name}'")
-                        jobs_queue[to_kill].put("STOP", block=True)
-                        logging.warning(f"Crashed job '{to_kill.name}'")
+                    client_state = ClientStates.SamplingAction
 
-
-                # Inform the computer(s)
-                if old_state != state:
-                    old_state = state
-                    for job, sendq in jobs_queue.items():
-                        if job.is_alive():
-                            sendq.put(["STATE", state], block=True)
 
             try:
                 # 1/ Le leader est élu : leader_queue.put("LEADER_ANNOUCNCE : I am the leader")
@@ -363,27 +410,61 @@ if __name__ == '__main__':
                     for j in jobs:
                         if j.name == action['name']:
                             current_leader = j
-                            print(f"New leader : {action['name']}")
+                            logging.warning(f"[{timestep}] New leader elected: {action['name']}")
+                    # Reset state machine
+                    client_state = ClientStates.Idle
+                    decided_state, sample_action, timestep_sm = None, None, None
 
-                    send_sample_next_action(
-                        jobs_queue[current_leader])
+                elif action['type'] == "DECISION_STATE":
+                    logging.debug(f"[{timestep} - {timestep_sm}] Decided state : {action}")
 
-                    pass
-                elif action['type'] == "DECISION":
-                    print(f"Decided action : {action}")
-                    # do action
-                    pass
+                    client_state = ClientStates.DecidedState
+                    decided_state = action['state_decided']
+
+                    send_sample_next_action(jobs_queue[current_leader])
+
                 elif action['type'] == "SAMPLED_ACTION":
-                    print(f"Sampled action : {action['action']}")
+                    logging.debug(f"[{timestep} - {timestep_sm}] Sampled action : {action['action']}")
+
+                    client_state = ClientStates.SampledAction
+                    sample_action = action['action']
 
                     send_propose_state_action(
-                        jobs_queue[current_leader], (state, action['action']))
+                        jobs_queue[current_leader],
+                        decided_state, sample_action)
+
+                elif action['type'] == "DECISION":
+                    logging.debug(f"[{timestep} - {timestep_sm}] Decision taken : {action}")
+                    # do action
+
+                    if action['action_decided']:
+                        if not test_action(expected_actions, action['action_decided'], timestep):
+                            logging.error(f"[{timestep} - {timestep_sm}] Decision taken : {action}")
+                        else:
+                            good_decisions += 1
+
+
+                    # Reset state machine
+                    client_state = ClientStates.Idle
+                    decided_state, sample_action, timestep_sm = None, None, None
+
 
             except Empty:
                 pass
 
+
+            if timestep > last_log_timestep + 1/TIMESTEP:
+                last_log_timestep = timestep
+
+                dps = (good_decisions / timestep) / TIMESTEP
+                logging.error(f"[{timestep}] Progress good decisions={good_decisions} ({dps:.1f} per second)")
+
     except KeyboardInterrupt:
         pass
+
+    except Exception as ex:
+        logging.error(str(ex))
+        logging.error(str(traceback.format_exc()))
 
     logging.info("Experiment complete")
 
