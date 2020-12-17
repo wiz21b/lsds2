@@ -167,7 +167,8 @@ class Server:
     def sample_next_action(self):
         # The flight computer of the *leader* selects the action
         # he'd do, based on the state that was
-        # commited by RAFT
+        # commited by RAFT (but without asking other computers
+        # (yet)).
 
         action = self.flight_computer.sample_next_action()
         self.comm.send_sampled_action(action)
