@@ -122,9 +122,9 @@ class Worker(Process):
         self._leader_queue.put({"type" : "LEADER_ANNONCE",
                                 "name" : name})
 
-    def send_decided_action(self, name, action):
+    def send_decided_action(self, is_action_decided):
         self._leader_queue.put({"type" : "DECISION",
-                                "action" : action})
+                                "is_action_decided" : is_action_decided})
 
     def log(self, msg):
         #return

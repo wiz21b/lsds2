@@ -135,11 +135,15 @@ class Server:
 
 
     def proposeStateAction(self, state_action):
-        # Propose a state and action to the leader
+        # Client proposes a state and action to the leader
         # so that it can decide if the cluster
         # accepts it.
 
         # Vasco's stuff
+
+        # To answer to the client :
+        # self.comm.send_decided_action(bool):
+
         pass
 
     def timeout_callback(self):
@@ -148,7 +152,7 @@ class Server:
             print("Time out!")
 
             self.comm.send_me_leader(self.name)
-            self.comm.send_decided_action(self.name, "dummy")
+            self.comm.send_decided_action(True)
 
 
             #send_all( { "methode" : "requestVote", param...} )
