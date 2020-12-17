@@ -63,17 +63,19 @@ class Worker(Process):
 
                     if type(msg) == dict and 'method' in msg:
                         if msg['method'] == "requestVote":
-                            d = msg['data']
                             self._raft_server.requestVote(
-                                d['term'], d['candidateId'],
-                                d['lastLogIndex'], d['lastLogTerm'])
+                                msg['term'], msg['candidateId'],
+                                msg['lastLogIndex'], msg['lastLogTerm'])
 
                         if msg['method'] == "requestVoteAck":
-                            d = msg['data']
                             self._raft_server.requestVoteAck(
-                                d['term'], d['candidateId'],
-                                d['lastLogIndex'], d['lastLogTerm'])
+                                msg['term'], msg['success'],
+                                msg['senderID'])
 
+                        if msg['method'] == "appendEntries":
+                            self._raft_server.appendEntries(
+                                msg['term'], msg['leaderID'], msg['prevLogIndex'],
+                                msg['prevLogTerm'], msg['entries'], msg['leaderCommit'])
                         if msg['method'] == "proposeStateAction":
                             self._raft_server.proposeStateAction(
                                 msg['state_action'])
@@ -81,6 +83,12 @@ class Worker(Process):
 
                     if 'STATE' not in msg:
                         self.log(msg)
+
+                        if msg['method'] == "appendEntriesAck":
+                            self._raft_server.appendEntriesAck(
+                                msg['term'], msg['success'], msg['senderID'])
+
+
 
                 except Empty:
                     pass
@@ -112,11 +120,26 @@ class Worker(Process):
             self._control_queue.get()
 
 
+    def send_requestVote(self, peer_name, term, candidateID, lastLogIndex, lastLogTerm):
+        d = {"method": "requestVote", "term": term, "candidateID": candidateID,
+             "lastLogIndex": lastLogIndex, "lastLogTerm": lastLogTerm}
+        self._sendqs[peer_name].put(d)
+
     def send_requestVoteAck(self, peer_name, term, success, senderID):
         d = {"method" : "requestVoteAck",
              "term": term, "success": success, "senderID": senderID}
         self._sendqs[peer_name].put(d)
 
+    def send_appendEntries(self, peer_name, term, leaderId, prevLogIndex, prevLogTerm, entries, leaderCommit):
+        d = {"method": "appendEntries", "term": term, "leaderID": leaderID, 
+             "prevLogTerm": prevLogTerm, "prevLogIndex": prevLogIndex,
+             "entries": entries, "leaderCommit": leaderCommit}
+        self.sendqs[peer_name].put(d)
+
+    def send_appendEntriesAck(self, peer_name, term, success, senderID):
+        d = {"method" : "appendEntriesAck",
+             "term": term, "success": success, "senderID": senderID}
+        self._sendqs[peer_name].put(d)
 
     def send_me_leader(self, name):
         self._leader_queue.put({"type" : "LEADER_ANNONCE",
@@ -158,6 +181,8 @@ class Worker(Process):
 
     def set_controle_queue(self, q):
         self._control_queue = q
+
+
 
 
 
