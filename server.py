@@ -112,6 +112,15 @@ class Server:
         self._timer_thread = None
         self.start_timer(5)
 
+        self._heartbeat_timer_thread = threading.Timer(1, self.heartbeat_callback)
+
+    def heartbeat_callback(self):
+        self._heartbeat_timer_thread.join()
+        if self.state == "Leader":
+            self._heartbeat_timer_thread = threading.Timer(1, self.heartbeat_callback)
+            #self.comm.send_all(appendEntries(self.currentTerm, self.name, None, None, None, self.commitIndex))
+
+
     def start_timer(self, duration):
         if self._timer_thread:
             self._timer_thread.cancel()

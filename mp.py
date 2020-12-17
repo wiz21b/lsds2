@@ -134,6 +134,15 @@ class Worker(Process):
              "term": term, "success": success, "senderID": senderID}
         self._sendqs[peer_name].put(d)
 
+    def send_appendEntries(self, peer_name, term, leaderId, prevLogIndex, prevLogTerm, entries, leaderCommit):
+        d = {"method": "send_appendEntries",
+             "term": term,
+             "leaderId": leaderId,
+             "prevLogIndex": prevLogIndex,
+             "prevLogTerm": prevLogTerm,
+             "entries": entries,
+             "leaderCommit": leaderCommit }
+        self._sendqs[peer_name].put(d)
 
     def send_me_leader(self, name):
         self._leader_queue.put({"type" : "LEADER_ANNONCE",
