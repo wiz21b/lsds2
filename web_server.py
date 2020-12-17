@@ -1,3 +1,4 @@
+import time
 import threading
 import logging
 import requests
@@ -10,8 +11,10 @@ from starter_code.withoutksp import allocate_flight_computers, commandline_args,
 from starter_code.computers import FlightComputer
 from utils import BASE_URL, call_peer, NetworkException, call_peer_with_dict, ThreadWithReturnValue
 
-raft_server = Server("one")
 
+
+raft_server = Server("one")
+raft_server.start_timer(2)
 
 class FlightComputerNet(FlightComputer):
 
@@ -92,13 +95,22 @@ class FlightComputerNet(FlightComputer):
 
 flight_computer = FlightComputerNet(readout_state(0))
 
+
 app = Flask(__name__)
 
 @app.route("/appendEntries", methods=('PUT',))
 def appendEntriesWeb():
     if request.method == 'PUT':
-        return json.dumps(server.log, cls=ServerEncoder)
+        return json.dumps(raft_server.log, cls=ServerEncoder)
         #return "zuliu" + request.form['term']
+
+@app.route("/requestVote", methods=('PUT',))
+def requestVote():
+    if request.method == 'PUT':
+        with raft_server._thread_lock:
+            res = json.dumps(raft_server.requestVote(), cls=ServerEncoder)
+        return res
+
 
 @app.route("/decide_on_action", methods=('PUT',))
 def decide_on_action():
@@ -172,6 +184,7 @@ if __name__ == "__main__":
         port = 5000 + i
         if port != args.port:
             flight_computer.add_peer(f"{BASE_URL}:{port}")
+            raft_server.add_peer(f"{BASE_URL}:{port}")
 
     logging.getLogger('werkzeug').disabled = True
 
