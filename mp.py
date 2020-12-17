@@ -83,12 +83,14 @@ class Worker(Process):
                                 msg['senderID'])
 
                         if msg['method'] == "appendEntries":
-                            self._raft_server.appendEntries(
-                                msg['term'], msg['leaderID'], msg['prevLogIndex'],
+                        	print(self.name, "read send appendEntries")
+                        	self._raft_server.appendEntries(
+                                msg['term'], msg['leaderId'], msg['prevLogIndex'],
                                 msg['prevLogTerm'], msg['entries'], msg['leaderCommit'])
 
                         if msg['method'] == "appendEntriesAck":
-                            self._raft_server.appendEntriesAck(
+                        	print(self.name, "read send appendEntriesAck")
+                        	self._raft_server.appendEntriesAck(
                                 msg['term'], msg['success'],
                                 msg['lastIndex'], msg['senderID'])
 
@@ -158,19 +160,21 @@ class Worker(Process):
     def send_requestVoteAck(self, peer_name, term, success, senderID):
         d = {"method" : "requestVoteAck",
              "term": term, "success": success, "senderID": senderID}
-        print("requestVoteAck dans mp.py")
+        print("send_requestVoteAck dans mp.py")
         self._sendqs[peer_name].put(d)
 
     def send_appendEntries(self, peer_name, term, leaderId, prevLogIndex, prevLogTerm, entries, leaderCommit):
-        d = {"method": "appendEntries", "term": term, "leaderID": leaderID,
-             "prevLogTerm": prevLogTerm, "prevLogIndex": prevLogIndex,
+        d = {"method": "appendEntries", "term": term, "leaderId": leaderId,
+             "prevLogIndex": prevLogIndex, "prevLogTerm": prevLogTerm,
              "entries": entries, "leaderCommit": leaderCommit}
-        self.sendqs[peer_name].put(d)
+        print(self.name, "send_appendEntries dans mp.py")
+        self._sendqs[peer_name].put(d)
 
     def send_appendEntriesAck(self, peer_name, term, success, lastIndex, senderID):
         d = {"method" : "appendEntriesAck",
              "term": term, "success": success, "lastIndex": lastIndex, 
              "senderID": senderID}
+        print(self.name, "send_appendEntriesAck dans mp.py")
         self._sendqs[peer_name].put(d)
 
     def send_me_leader(self, name):
@@ -393,7 +397,8 @@ if __name__ == '__main__':
     	j.send_add_me(jobs, j.name)
 
     # test requestVote, il y a des print dans les send, lecture message et fonctyion de server.py
-    jobs[0].send_requestVote(jobs[1].name, 1, jobs[0].name, 0, 0)
+    # jobs[0].send_requestVote(jobs[1].name, 1, jobs[0].name, 0, 0)
+    jobs[0].send_appendEntries(jobs[1].name, 1, jobs[0].name, 1, 1, 1, 1)
 
     for j in jobs:
     	j.start()

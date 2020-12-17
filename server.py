@@ -407,6 +407,7 @@ class Server:
 
 
     def appendEntries(self, term, leaderId, prevLogIndex, prevLogTerm, entries, leaderCommit):
+        print(self.name, "appendEntries dans server.py")
         if term < self.currentTerm:
             self.comm.send_appendEntriesAck(self.peers[leaderId], self.currentTerm, False, self.log.lastIndex(), self.name)
 
@@ -486,6 +487,7 @@ class Server:
 
     # CALL
     def appendEntriesAck(self, term, success, lastIndex, senderID):
+        print(self.name, "appendEntriesAck dans server.py")
         self.ackEntries[senderID].term = term
         self.ackEntries[senderID].success = success
         self.ackEntries[senderID].lastIndex = lastIndex
