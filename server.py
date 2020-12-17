@@ -2,6 +2,8 @@ import threading
 from datetime import datetime
 import json
 import random
+import math
+from heapq import nlargest
 from utils import call_peer,ThreadWithReturnValue,call_peer_with_dict
 
 
@@ -27,9 +29,10 @@ class LogEntry:
         self.term = term
 
 class AckEntry:
-    def __init__(self, term, success):
+    def __init__(self, term, success, lastIndex=None):
         self.term = term
         self.success = success
+        self.lastIndex = lastIndex
 
 class ServerLog:
     def __init__(self, entries = []):
@@ -127,9 +130,6 @@ class Server:
     def set_comm(self, worker):
         self.comm = worker
 
-    def start_timer(self, duration):
-        pass
-
     def init_timeout(self, value):
         self.timeout = value
 
@@ -186,7 +186,7 @@ class Server:
     def convert_to_candidate_step2(self, call_results):
 
         acceptations = sum(filter(lambda t: t, call_results))
-        if acceptations > len(self.peers) / 2:
+        if acceptations > math.ceil(len(self.peers) / 2):
             self.convert_to_leader()
         elif self.received_append_entries > 0:
             self.convert_to_follower()
@@ -250,13 +250,12 @@ class Server:
                 server.requestVote(self.currentTerm, self.name, self.log.lastIndex(), self.log.__getitem__(self.log.lastIndex()).term)
 
     def candidates_update(self):
-        if self.state != "Candidate":
+        if self.state == "Candidate":
             nbVotes = 1
-            maxTerm = self.currentTerm
             for server in self.peers:
                 if self.ackElec[server].success == True:
                     nbVotes += 1
-                    maxTerm = max(maxTerm, self.ackElec[server].term)
+                    self.currentTerm = max(self.currentTerm, self.ackElec[server].term)
 
             if nbVotes > len(self.peers) + 1:
                 for server in self.peers:
@@ -279,22 +278,50 @@ class Server:
                     server.requestVote(self.currentTerm, self.name, self.log.lastIndex(), self.log.__getitem__(self.log.lastIndex()).term)
 
     def leaders_update(self):
-        actionID = str(int(random.random()*10))                 #Implement here an user action get
-        action = "myRdmAction=" + actionID                      #Implement here an user action get
-        self.log.append_entry(LogEntry(action, self.currentTerm))
+        if self.state == "Leader":
+            actionID = str(int(random.random()*10))                 #Implement here an user action get
+            action = "myRdmAction=" + actionID                      #Implement here an user action get
+            self.log.append_entry(LogEntry(action, self.currentTerm))
 
-    def requestVote(self, term, candidateId, lastLogIndex, lastLogTerm):    #Potential issue regarding term vs lastLogTerm -> inconsitancy between paper and video from creator
+            for server in self.peers:
+                if self.log.lastIndex() >= self.nextIndex[server]:
+                    entries = self.log.getItemFrom(self.nextIndex[server])
+                    server.appendEntries(self.currentTerm, self.name, self.nextIndex[server]-1,
+                                            entries[0].term, entries, self.commitIndex)
+
+            for server in self.peers:
+                if self.ackEntries[server].success == True:
+                    self.matchIndex[server] = self.ackEntries[server].lastIndex
+                    self.nextIndex[server] = self.log.lastIndex() + 1
+                    self.currentTerm = max(self.currentTerm, self.ackEntries[server].term)
+                    self.ackEntries[server].success = None
+                    self.ackEntries[server].term = None
+
+                if self.ackEntries[server].success == False:
+                    self.nextIndex[server] -= 1
+                    self.currentTerm = max(self.currentTerm, self.ackEntries[server].term)
+                    self.ackEntries[server].success = None
+                    self.ackEntries[server].term = None
+
+            nLargestIndex = nlargest(math.ceil(len(self.peers)/2), self.matchIndex, key=self.matchIndex.get)
+            nThLargestIndex = nLargestIndex[len(nLargestIndex)-1]
+            if nThLargestIndex > self.commitIndex and self.log[nThLargestIndex].term == self.currentTerm:
+                self.commitIndex = nThLargestIndex
+
+    def global_update(self):
+        self.all_server_update()
+        self.followers_update()
+        self.candidates_update()
+        self.leaders_update()
+
+    def requestVote(self, term, candidateId, lastLogIndex, lastLogTerm):
         if term < self.currentTerm:
-            self.peers[candidateId].requestVoteAck(self.currentTerm, False, self.name)    #may change of form with udp implementation -> peers elem being url, but same idea
+            self.peers[candidateId].requestVoteAck(self.currentTerm, False, self.name)
+
+        self.currentTerm = term
 
         if self.votedFor in (None, candidateId) and \
-            lastLogIndex >= self.log.lastIndex() and \
-            term == self.currentTerm:
-            self.currentTerm = term
-            self.peers[candidateId].requestVoteAck(term, True, self.name)
-
-        if term > self.currentTerm:
-            self.currentTerm = term
+            lastLogIndex >= self.log.lastIndex():
             self.peers[candidateId].requestVoteAck(term, True, self.name)
 
         self.peers[candidateId].requestVoteAck(term, False, self.name)
@@ -305,14 +332,14 @@ class Server:
 
     def appendEntries(self, term, leaderId, prevLogIndex, prevLogTerm, entries, leaderCommit):
         if term < self.currentTerm:
-            self.peers[leaderId].appendEntriesAck(self.currentTerm, False, self.name)
+            self.peers[leaderId].appendEntriesAck(self.currentTerm, False, self.log.lastIndex(), self.name)
 
         if entries == None:
             print("The RPC request received was a empty heartbeat")
-            self.peers[leaderId].appendEntriesAck(term, True, self.name)
+            self.peers[leaderId].appendEntriesAck(term, True, self.log.lastIndex(), self.name)
 
         if prevLogIndex > self.log.__len__() or (prevLogIndex != 0 and self.log[prevLogIndex].term != prevLogTerm):
-            self.peers[leaderId].appendEntriesAck(term, False, self.name)
+            self.peers[leaderId].appendEntriesAck(term, False, self.log.lastIndex(), self.name)
 
         #C'est censé déjà être le cas et si ça ne l'est pas, c'est que l'appel est mal formaté
         #entries = ServerLog(entries)
@@ -340,95 +367,22 @@ class Server:
             self.stepDown = True
 
         self.currentTerm = term
-        self.peers[leaderId].appendEntriesAck(term, True, self.name)
+        self.peers[leaderId].appendEntriesAck(term, True, self.log.lastIndex(), self.name)
 
-    def appendEntriesAck(self, term, success, senderID):
+    def appendEntriesAck(self, term, success, lastIndex, senderID):
         self.ackEntries[senderID].term = term
         self.ackEntries[senderID].success = success
+        self.ackEntries[senderID].lastIndex = lastIndex
 
 if __name__ == '__main__':
-
-    #----------------------------------------------------------------------------------#
-    #                          Construction d'un exemple type                          #
-    #                                         -                                        #
-    #  Une étape manquante ne permettera pas un test a plus grande échelle sans crash  #
-    #----------------------------------------------------------------------------------#
-
-    #Pour la doc des RPC: https://web.stanford.edu/~ouster/cgi-bin/papers/raft-atc14
-
     server1 = Server("Serv1")
     server2 = Server("Serv2")
 
-    #We have to add here commit index update (not mandatory for all current test, only requiered for final algo)
-
-    #Simulating election request from server 1 (intiated by timeout as no leader currently exist)
-    server1.currentTerm += 1
-    server1.votedFor = "Serv1"
-
-    #Simulating a RPC (election) from server1 to (here server2 only) all servers
-    retTerm, retSuccess = server2.requestVote(server1.currentTerm, server1.name, server1.log.lastIndex(), server1.log.__getitem__(server1.log.lastIndex()).term)
-    server2.currentTerm = retTerm #Mandatory to allow old leader that lost track for a while to step down and get updated back
-
-    print("Return values: ")
-    print("retTerm =", retTerm)
-    print("retSuccess =", retSuccess)
-
-    #Here a test should be implemented after the responses of the other servers to the candidate(s)
-    #If a canditate has at least nbOfServers/2 True returns from the other servers.
-    #If one does, it is the new leader and can talk to the client + should send heartbeat via appendEntries RPC
-
-    #Here server1 is elected
-    server1.votedFor = None
-
-    #Implementing leader knowlege of other servers (at every ellection reset new leader knowledge like shown)
-    server1.nextIndex["serverTwo"] = server1.log.lastIndex() + 1
-    server1.matchIndex["serverTwo"] = 0
-
-    #Leader send heartbeat RPC to all other servers to say he is the new leader
-    retTerm, retSuccess = server2.appendEntries(server1.currentTerm, server1.name, None, None, None, server1.commitIndex)
-    server2.currentTerm = retTerm
-
-    if not retSuccess:
-        print("Critical issue in empty heartbeat")
-        assert retSuccess
-
-    #Reset server2 random timeout (150 - 300ms OR >>> broadcastTime)
-
-    #If a server is a candidate, it should now become a follower
-
-    #Now leader waits for his small timeout --> send empty heartbeat / an user inputs --> broadcast new entry
-
-    #Simulating an user input
-    server1.log.append_entry(LogEntry("myBeatifullAction", 1)) #The 1 is determined by server 1 (because he is suppose to be the leader) and is his term
-
-    #Reset leader heartbeat timeout
-
-    #Leader verification of follower's logs update
-    if server1.log.__len__() >= server1.nextIndex["serverTwo"]:
-        #Simulating reaction from leader --> RPC to followers
-        entries = server1.log.getItemFrom(server1.nextIndex["serverTwo"])
-        retTermServ2, retSuccessServ2 = server2.appendEntries(server1.currentTerm, server1.name, server1.nextIndex["serverTwo"]-1,
-                                                                entries[0].term, entries, server1.commitIndex)
-        server1.currentTerm = retTermServ2
-
-        #Reset server2 random timeout (150 - 300ms OR >>> broadcastTime)
-
-        print("Return values: ")
-        print("retTermServ2 =", retTermServ2)
-        print("retSuccessServ2 =", retSuccessServ2)
-
-        #If return is False, then the next index for the server X stored in the leader is still too big, retry at next iteration with decremented index
-        if not retSuccessServ2:
-            server1.nextIndex["serverTwo"] -= 1
-
-        #Server log verification
-        tmp = ""
-        for elem in server2.log._data:
-            tmp += "("
-            tmp += str(elem.command)
-            tmp += ", "
-            tmp += str(elem.term)
-            tmp += ") "
-        print(server2.name + " log: " + tmp)
-
-        #We can restart to line 164
+    #pas encore testé et crash possible mais deverait pas
+    i = 0
+    while True:
+        if not i % 10:
+            server1.global_update()
+            server2.global_update()
+            print(i)
+        i += 1
