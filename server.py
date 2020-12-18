@@ -129,17 +129,21 @@ class Server:
     def heartbeat_callback(self):
         print("hb of " + self.name + " occured")
         # self._heartbeat_timer_thread.join()
+
+        with self._heartbeat_timer_thread:
+
+            if self.state == "Leader":
+                print("hb of " + self.name + " executed because he is leader")
+
+                if self.isLocal:
+                    for _, server in self.peers.items():
+                        server.appendEntries(self.currentTerm, self.name, None, None, None, self.commitIndex)
+                else:
+                    pass
+                    #self.comm.send_all(appendEntries(self.currentTerm, self.name, None, None, None, self.commitIndex))
+
         self._heartbeat_timer_thread = threading.Timer(self.heartBeatLen, self.heartbeat_callback)
         self._heartbeat_timer_thread.start()
-        if self.state == "Leader":
-            print("hb of " + self.name + " executed because he is leader")
-
-            if self.isLocal:
-                for _, server in self.peers.items():
-                    server.appendEntries(self.currentTerm, self.name, None, None, None, self.commitIndex)
-            else:
-                pass
-                #self.comm.send_all(appendEntries(self.currentTerm, self.name, None, None, None, self.commitIndex))
 
     def random_timer_init(self):
         #Timeout can't be less than 2 heartbeat periods to avoid too frequent election request simply beacause of packets drop
@@ -578,6 +582,7 @@ if __name__ == '__main__':
             print(f"ERROR {nb_leaders} leaders at the same time ?!")
             for s in all_servers:
                 s.print_log()
+                s.stop() # Clear threads
 
             exit()
 
