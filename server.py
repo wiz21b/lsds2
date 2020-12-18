@@ -578,10 +578,17 @@ if __name__ == '__main__':
 
         leader = None
         nb_leaders = 0
+
+        for s in all_servers:
+            s._thread_lock.acquire()
+
         for s in all_servers:
             if s.who_is_leader():
                 leader = s
                 nb_leaders += 1
+
+        for s in all_servers:
+            s._thread_lock.release()
 
         if nb_leaders not in (0, 1):
             for s in all_servers:
