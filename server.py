@@ -317,11 +317,10 @@ class Server:
         return None
 
     def print_log(self):
-
         roof = "######################################"
-        print(roof)
         print(f"{self.name} is a {self.state} ")
         if self.log.lastIndex() > 0:
+            print(roof)
             elems = self.log.getItemFrom(1)
             for elem in elems:
                 line = "Action: " + str(elem.command) + " - Term: " + str(elem.term)
@@ -329,9 +328,9 @@ class Server:
                 lSpaces = " " * math.floor(spacesLen/2)
                 rSpaces = " " * math.ceil(spacesLen/2)
                 print("#" + lSpaces + line + rSpaces + "#")
+            print(roof)
         else:
             print("No log")
-        print(roof)
 
     def all_server_update(self):
         if self.commitIndex > self.lastApplied:
@@ -413,7 +412,7 @@ class Server:
                     self.ackEntries[key].success = None
                     self.ackEntries[key].term = None
 
-            nLargestIndex = nlargest(math.ceil(len((self.peers) + 1) / 2), self.matchIndex, key=self.matchIndex.get)
+            nLargestIndex = nlargest(math.ceil((len(self.peers) + 1) / 2), self.matchIndex, key=self.matchIndex.get)
             nThLargestIndex = nLargestIndex[len(nLargestIndex)-1]
 
             if self.matchIndex[nThLargestIndex] > self.commitIndex and self.log[self.matchIndex[nThLargestIndex]].term == self.currentTerm:
@@ -427,7 +426,7 @@ class Server:
 
     #test t-bow
     def requestVote(self, term, candidateId, lastLogIndex, lastLogTerm):
-        print(self.name, "requestVote dans server.py")
+        #print(self.name, "requestVote dans server.py")
         if term < self.currentTerm:
             if self.isLocal:
                 self.peers[candidateId].requestVoteAck(self.currentTerm, False, self.name)
@@ -468,14 +467,14 @@ class Server:
 
     # CALL
     def requestVoteAck(self, term, success, senderID):
-        print(self.name, "requestVoteAck dans server.py")
+        #print(self.name, "requestVoteAck dans server.py")
         self.ackElec[senderID].term = term
         self.ackElec[senderID].success = success
 
 
 
     def appendEntries(self, term, leaderId, prevLogIndex, prevLogTerm, entries, leaderCommit):
-        print(self.name, "appendEntries dans server.py")
+        #print(self.name, "appendEntries dans server.py")
         if term < self.currentTerm:
             if self.isLocal:
                 self.peers[leaderId].appendEntriesAck(self.currentTerm, False, self.log.lastIndex(), self.name)
@@ -546,7 +545,7 @@ class Server:
 
     # CALL
     def appendEntriesAck(self, term, success, lastIndex, senderID):
-        print(self.name, "appendEntriesAck dans server.py")
+        #print(self.name, "appendEntriesAck dans server.py")
         self.ackEntries[senderID].term = term
         self.ackEntries[senderID].success = success
         self.ackEntries[senderID].lastIndex = lastIndex
@@ -594,7 +593,7 @@ if __name__ == '__main__':
 
         # Show debugging info
         if j % 1000 == 0:
-            print(j)
+            #print(j)
             if leader:                             #add any condition to replace True at which an user input will be sent the the leader
                 with leader._thread_lock:
                     actionID = leader.log.lastIndex()
@@ -602,10 +601,10 @@ if __name__ == '__main__':
                     leader.log.append_entry(LogEntry(action, leader.currentTerm))
 
             for s in all_servers:
-                s.print_log()
+                pass #s.print_log()
 
             if not leader:
-                print("No leader so far")
+                pass #print("No leader so far")
 
         # Make sur the server run
         for s in all_servers:
