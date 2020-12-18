@@ -584,10 +584,10 @@ if __name__ == '__main__':
                 nb_leaders += 1
 
         if nb_leaders not in (0, 1):
-            print(f"ERROR {nb_leaders} leaders at the same time ?!")
             for s in all_servers:
                 s.print_log()
                 s.stop() # Clear threads
+            print(f"ERROR {nb_leaders} leaders at the same time ?!")
 
             exit()
 
