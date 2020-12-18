@@ -591,9 +591,10 @@ if __name__ == '__main__':
         if j % 1000 == 0:
             print(j)
             if leader:                             #add any condition to replace True at which an user input will be sent the the leader
-                actionID = leader.log.lastIndex()
-                action = "myRdmAction=" + str(actionID)
-                leader.log.append_entry(LogEntry(action, leader.currentTerm))
+                with leader._thread_lock:
+                    actionID = leader.log.lastIndex()
+                    action = "myRdmAction=" + str(actionID)
+                    leader.log.append_entry(LogEntry(action, leader.currentTerm))
 
             for s in all_servers:
                 s.print_log()
