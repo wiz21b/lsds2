@@ -402,7 +402,7 @@ class Server:
                     self.ackEntries[key].success = None
                     self.ackEntries[key].term = None
 
-            nLargestIndex = nlargest(math.ceil(len(self.peers)/2), self.matchIndex, key=self.matchIndex.get)
+            nLargestIndex = nlargest(math.ceil(len((self.peers) + 1) / 2), self.matchIndex, key=self.matchIndex.get)
             nThLargestIndex = nLargestIndex[len(nLargestIndex)-1]
             
             if self.matchIndex[nThLargestIndex] > self.commitIndex and self.log[self.matchIndex[nThLargestIndex]].term == self.currentTerm:
