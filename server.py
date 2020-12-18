@@ -110,9 +110,12 @@ class Server:
         self.ackEntries = dict()
         self.ackElec = dict()
         self._timer_thread = None
-        self.start_timer(5)
+        
+        self.heartBeatLen = 5
+        self.start_timer(self.random_timer_init())
+        self._timeout_expired = False
 
-        self._heartbeat_timer_thread = threading.Timer(5, self.heartbeat_callback)
+        self._heartbeat_timer_thread = threading.Timer(self.heartBeatLen, self.heartbeat_callback)
         self._heartbeat_timer_thread.start()
 
     def logger(self, msg):
@@ -122,16 +125,22 @@ class Server:
         self._logging.put(f"{datetime.now()} {self.name}: {msg}")
 
     def heartbeat_callback(self):
-        print("hbjoin")
+        print("hb of " + self.name + " proc")
         # self._heartbeat_timer_thread.join()
-        if True or self.state == "Leader":
-            self._heartbeat_timer_thread = threading.Timer(5, self.heartbeat_callback)
-            self._heartbeat_timer_thread.start()
-            print("wi")
-            self.logger("test")
-            # for i in :
-            #self.comm.send_all(appendEntries(self.currentTerm, self.name, None, None, None, self.commitIndex))
-            # self.log("test")
+        self._heartbeat_timer_thread = threading.Timer(self.heartBeatLen, self.heartbeat_callback)
+        self._heartbeat_timer_thread.start()
+        if self.state == "Leader":
+            print("hb of " + self.name + " executed")
+            for _, server in self.peers.items():
+                server.appendEntries(self.currentTerm, self.name, None, None, None, self.commitIndex)
+    
+    def random_timer_init(self):
+        #Timeout can't be less than 2 heartbeat periods to avoid too frequent election request simply beacause of packets drop
+        value = self.heartBeatLen * 2
+        #Add to the prev value a percentage of the time of 2 heartbeat periods
+        value += (random.random() * (self.heartBeatLen * 2))
+        print(self.name, value)
+        return value
 
     def start_timer(self, duration):
         if self._timer_thread:
@@ -139,6 +148,8 @@ class Server:
         self._timer_thread = threading.Timer(duration, self.timeout_callback)
 
         self._timer_thread.start()
+
+        self._timeout_expired = False
 
     def start(self):
         self.start_timer(4)
@@ -155,9 +166,6 @@ class Server:
 
     def set_comm(self, worker):
         self.comm = worker
-
-    def init_timeout(self, value):
-        self.timeout = value
 
     def add_peer(self, peerID, peer_url):
         self.peers[peerID] = peer_url
@@ -210,12 +218,12 @@ class Server:
             self._timeout_expired = True
 
     def ack_entries_reset(self):
-        for server in self.peers:
-            self.ackEntries[server] = AckEntry(None, None)
+        for key, _ in self.peers.items():
+            self.ackEntries[key] = AckEntry(None, None)
 
     def ack_elec_reset(self):
-        for server in self.peers:
-            self.ackElec[server] = AckEntry(None, None)
+        for key, _ in self.peers.items():
+            self.ackElec[key] = AckEntry(None, None)
 
     def convert_to_follower(self):
         self.state = "Follower"
@@ -231,7 +239,7 @@ class Server:
 
         #send_all( { "methode" : "requestVote", param....} )
 
-        # for peer_queues in self.peers:
+        # for peer_queues in self.peers.items():
         #     # RPC to send requestVote @ peer_url
 
         #         # quid des time out ?
@@ -288,6 +296,29 @@ class Server:
 
             self.apply_state_machine(self.log[self.lastApplied])
 
+    def who_is_leader(self):
+        if self.state == "Leader":
+            return self
+        for _, server in self.peers.items():
+            if server.state == "Leader":
+                return server
+        return None
+
+    def print_log(self):
+        if self.log.lastIndex() == 0:
+            return
+
+        elems = self.log.getItemFrom(1)
+        roof = "######################################"
+        print(roof)
+        for elem in elems:
+            line = "Action: " + str(elem.command) + " - Term: " + str(elem.term)
+            spacesLen = len(roof) - 2 - len(line)
+            lSpaces = " " * math.floor(spacesLen/2)
+            rSpaces = " " * math.ceil(spacesLen/2)
+            print("#" + lSpaces + line + rSpaces + "#")
+        print(roof)
+
     def all_server_update(self):
         if self.commitIndex > self.lastApplied:
             #apply self.log[lastApplied].command to state machine
@@ -296,76 +327,83 @@ class Server:
         return
 
     def followers_update(self):
-        if self.state == "Follower" and self.timeout == 0:
+        #Become a candidate for term = self.currentTerm + 1
+        if self.state == "Follower" and self._timeout_expired == True:
             self.state = "Candidate"
             self.currentTerm += 1
             self.votedFor = self.name
-            #reset of random timeout /!\ current evalation is purely to not have 0 and is probably not efficient
-            timeout = random.random()*10
-            self.init_timeout(timeout)
+            #reset of random timeout
+            self.start_timer(self.random_timer_init())
 
             #Send election RPC to all peers
-            for server in self.peers:
+            for _, server in self.peers.items():
                 server.requestVote(self.currentTerm, self.name, self.log.lastIndex(), self.log.__getitem__(self.log.lastIndex()).term)
 
     def candidates_update(self):
         if self.state == "Candidate":
             nbVotes = 1
-            for server in self.peers:
-                if self.ackElec[server].success == True:
+            for key, server in self.peers.items():
+                if self.ackElec[key].success == True:
                     nbVotes += 1
-                    self.currentTerm = max(self.currentTerm, self.ackElec[server].term)
+                    self.currentTerm = max(self.currentTerm, self.ackElec[key].term)
 
-            if nbVotes > len(self.peers) + 1:
-                for server in self.peers:
-                    self.state = "Leader"
+            #Become the new leader
+            if nbVotes > (len(self.peers) + 1) / 2:
+                self.state = "Leader"
+                self.reset_leader_state()
+                for key, server in self.peers.items():
+                    self.nextIndex[key] = self.log.lastIndex() + 1
+                    self.matchIndex[key] = 0
                     #Leader send heartbeat RPC to all other servers to say he is the new leader
                     server.appendEntries(self.currentTerm, self.name, None, None, None, self.commitIndex)
+                return
 
             if self.stepDown == True:
                 self.state = "Follower"
                 self.stepDown = False
+                #reset of random timeout
+                self.start_timer(self.random_timer_init())
+                return
 
-            if self.timeout == 0:
+            if self._timeout_expired == True:
                 self.currentTerm += 1
-                #reset of random timeout /!\ current evalation is purely to not have 0 and is probably not efficient
-                timeout = random.random()*10
-                self.init_timeout(timeout)
+                #reset of random timeout
+                self.start_timer(self.random_timer_init())
 
-                #Send new election RPC to all peers (prevent tie or fail election to black the system)
-                for server in self.peers:
+                #Send new election RPC to all peers (prevent tie or fail election to block the system)
+                for _, server in self.peers.items():
                     server.requestVote(self.currentTerm, self.name, self.log.lastIndex(), self.log.__getitem__(self.log.lastIndex()).term)
 
     def leaders_update(self):
         if self.state == "Leader":
-            actionID = str(int(random.random()*10))                 #Implement here an user action get
-            action = "myRdmAction=" + actionID                      #Implement here an user action get
-            self.log.append_entry(LogEntry(action, self.currentTerm))
+            if self._timeout_expired == True:
+                self._timeout_expired == False
 
-            for server in self.peers:
-                if self.log.lastIndex() >= self.nextIndex[server]:
-                    entries = self.log.getItemFrom(self.nextIndex[server])
-                    server.appendEntries(self.currentTerm, self.name, self.nextIndex[server]-1,
+            for key, server in self.peers.items():
+                if self.log.lastIndex() >= self.nextIndex[key]:
+                    entries = self.log.getItemFrom(self.nextIndex[key])
+                    server.appendEntries(self.currentTerm, self.name, self.nextIndex[key]-1,
                                             entries[0].term, entries, self.commitIndex)
 
-            for server in self.peers:
-                if self.ackEntries[server].success == True:
-                    self.matchIndex[server] = self.ackEntries[server].lastIndex
-                    self.nextIndex[server] = self.log.lastIndex() + 1
-                    self.currentTerm = max(self.currentTerm, self.ackEntries[server].term)
-                    self.ackEntries[server].success = None
-                    self.ackEntries[server].term = None
+            for key, _ in self.peers.items():
+                if self.ackEntries[key].success == True:
+                    self.matchIndex[key] = self.ackEntries[key].lastIndex
+                    self.nextIndex[key] = self.log.lastIndex() + 1
+                    self.currentTerm = max(self.currentTerm, self.ackEntries[key].term)
+                    self.ackEntries[key].success = None
+                    self.ackEntries[key].term = None
 
-                if self.ackEntries[server].success == False:
-                    self.nextIndex[server] -= 1
-                    self.currentTerm = max(self.currentTerm, self.ackEntries[server].term)
-                    self.ackEntries[server].success = None
-                    self.ackEntries[server].term = None
+                if self.ackEntries[key].success == False:
+                    self.nextIndex[key] -= 1
+                    self.currentTerm = max(self.currentTerm, self.ackEntries[key].term)
+                    self.ackEntries[key].success = None
+                    self.ackEntries[key].term = None
 
             nLargestIndex = nlargest(math.ceil(len(self.peers)/2), self.matchIndex, key=self.matchIndex.get)
             nThLargestIndex = nLargestIndex[len(nLargestIndex)-1]
-            if nThLargestIndex > self.commitIndex and self.log[nThLargestIndex].term == self.currentTerm:
-                self.commitIndex = nThLargestIndex
+            
+            if self.matchIndex[nThLargestIndex] > self.commitIndex and self.log[self.matchIndex[nThLargestIndex]].term == self.currentTerm:
+                self.commitIndex = self.matchIndex[nThLargestIndex]
 
     def global_update(self):
         self.all_server_update()
@@ -377,12 +415,15 @@ class Server:
     def requestVote(self, term, candidateId, lastLogIndex, lastLogTerm):
         if term < self.currentTerm:
             self.peers[candidateId].requestVoteAck(self.currentTerm, False, self.name)
+            return
 
         self.currentTerm = term
 
         if self.votedFor in (None, candidateId) and \
             lastLogIndex >= self.log.lastIndex():
+            self.votedFor = candidateId
             self.peers[candidateId].requestVoteAck(term, True, self.name)
+            return
 
         self.peers[candidateId].requestVoteAck(term, False, self.name)
 
@@ -395,30 +436,48 @@ class Server:
     def appendEntries(self, term, leaderId, prevLogIndex, prevLogTerm, entries, leaderCommit):
         if term < self.currentTerm:
             self.peers[leaderId].appendEntriesAck(self.currentTerm, False, self.log.lastIndex(), self.name)
+            return
 
         if entries == None:
-            print("The RPC request received was a empty heartbeat")
+            print("The RPC request received was an empty heartbeat")
+            
+            if leaderCommit > self.commitIndex:
+                self.commitIndex = min(leaderCommit, self.log.lastIndex())
+
+            if self.state == "Candidate":
+                self.stepDown = True
+
+            self.currentTerm = term
+
+            self.votedFor = None
+            
             self.peers[leaderId].appendEntriesAck(term, True, self.log.lastIndex(), self.name)
+            return
 
         if prevLogIndex > self.log.__len__() or (prevLogIndex != 0 and self.log[prevLogIndex].term != prevLogTerm):
             self.peers[leaderId].appendEntriesAck(term, False, self.log.lastIndex(), self.name)
+            return
 
         #C'est censé déjà être le cas et si ça ne l'est pas, c'est que l'appel est mal formaté
         #entries = ServerLog(entries)
 
         i = prevLogIndex
-        if prevLogIndex == 0:
-            i += 1
-        else:
-            for ndx, new_log_entry in enumerate(entries):
-                if self.log[i].term != entries[ndx].term:
-                    self.log.clear_from(ndx)
-                    # ndx is growing => if we clear from here there
-                    # is nothing left to delete from self.log
-                    break
+        for ndx, _ in enumerate(entries):
+            if i == 0:
                 i += 1
+                break
 
-        for ndx, new_log_entry in enumerate(entries):
+            if self.log.lastIndex() < i:
+                break
+
+            if self.log[i].term != entries[ndx].term:
+                self.log.clear_from(i)
+                # ndx is growing => if we clear from here there
+                # is nothing left to delete from self.log
+                break
+            i += 1
+
+        for ndx, _ in enumerate(entries):
             if ndx >= i - prevLogIndex:
                 self.log.append_entry(entries[ndx])
 
@@ -429,6 +488,7 @@ class Server:
             self.stepDown = True
 
         self.currentTerm = term
+        self.votedFor = None
         self.peers[leaderId].appendEntriesAck(term, True, self.log.lastIndex(), self.name)
 
     # CALL
@@ -438,14 +498,34 @@ class Server:
         self.ackEntries[senderID].lastIndex = lastIndex
 
 if __name__ == '__main__':
-    server1 = Server("Serv1")
-    server2 = Server("Serv2")
+    server1 = Server("Serv1", None, None)
+    server2 = Server("Serv2", None, None)
 
-    #pas encore testé et crash possible mais deverait pas
+    server1.add_peer(server2.name, server2)
+    server2.add_peer(server1.name, server1)
+
     i = 0
+    j = 1
     while True:
-        if not i % 10:
+        if not i % 1000000:
+            if not j % 10:
+                print(j)
+
+            leader = server1.who_is_leader()
+            if leader is not None and True:                             #add any condition to replace True at which an user input will be sent the the leader 
+                actionID = leader.log.lastIndex()
+                action = "myRdmAction=" + str(actionID)
+                leader.log.append_entry(LogEntry(action, leader.currentTerm))
+
+            if True:
+                print("Server 1's log: ")
+                server1.print_log()
+                print()
+                print("Server 2's log: ")
+                server2.print_log()
+                print()
+
             server1.global_update()
             server2.global_update()
-            print(i)
+            j += 1
         i += 1
