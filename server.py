@@ -571,6 +571,11 @@ if __name__ == '__main__':
 
         #  Check leader election is OK
 
+        # WARNING This is dangerous code:
+        # IF server1 is leader and, while I'm counting the servers,
+        # the server5 becomes the leader, then I will have wrongly
+        # counter sever1 as a leader.
+
         leader = None
         nb_leaders = 0
         for s in all_servers:
