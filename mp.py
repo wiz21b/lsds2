@@ -60,8 +60,7 @@ class Worker(Process):
                     # 1/Code Execution
                     # e.g. requestVote to all peers
                     #self.send_all("lklk")
-
-                    # 2/ Message handling
+                    # 2/ Message handling$
                     msg = self._recq.get(block=False, timeout=1)
                     # if msg['method'] == "requestVote":
                     #     raft.server.requestVote()
@@ -72,35 +71,42 @@ class Worker(Process):
 
                     if type(msg) == dict and 'method' in msg:
                         if msg['method'] == "requestVote":
+                            print(self.name, "read send requestVote")
                             self._raft_server.requestVote(
-                                msg['term'], msg['candidateId'],
-                                msg['lastLogIndex'], msg['lastLogTerm'])
+								msg['term'], msg['candidateId'],
+								msg['lastLogIndex'], msg['lastLogTerm'])
 
                         if msg['method'] == "requestVoteAck":
-                            self._raft_server.requestVoteAck(
+                        	print(self.name, "read send requestVoteAck")
+                        	self._raft_server.requestVoteAck(
                                 msg['term'], msg['success'],
                                 msg['senderID'])
 
                         if msg['method'] == "appendEntries":
-                            self._raft_server.appendEntries(
-                                msg['term'], msg['leaderID'], msg['prevLogIndex'],
+                        	print(self.name, "read send appendEntries")
+                        	self._raft_server.appendEntries(
+                                msg['term'], msg['leaderId'], msg['prevLogIndex'],
                                 msg['prevLogTerm'], msg['entries'], msg['leaderCommit'])
 
                         if msg['method'] == "appendEntriesAck":
-                            self._raft_server.appendEntriesAck(
-                                msg['term'], msg['success'], msg['senderID'])
+                        	print(self.name, "read send appendEntriesAck")
+                        	self._raft_server.appendEntriesAck(
+                                msg['term'], msg['success'],
+                                msg['lastIndex'], msg['senderID'])
 
                         if msg['method'] == "proposeStateAction":
                             self._raft_server.proposeStateAction(
                                 msg['state_action'])
 
+                        if msg['method'] == "add_me":
+                        	self._raft_server.add_peer(msg['peerID'], msg['peer_url'])
+
                         elif msg['method'] == 'send_sample_next_action':
                             self._raft_server.sample_next_action()
 
                         elif msg['method'] == "decide_on_state":
-                            self._raft_server.decide_on_state(
-                                msg['state'])
-
+                        	self._raft_server.decide_on_state(msg['state'])
+                            
 
 
                     # if 'STATE' not in msg:
@@ -138,26 +144,37 @@ class Worker(Process):
         while not self._control_queue.empty():
             self._control_queue.get()
 
+    def send_add_me(self, jobs, me):
+    	d = {"method": "add_me", "peerID": self.name, "peer_url": self.name}
+    	for j in jobs:
+    		if j.name != me:
+    			self._sendqs[j.name].put(d)
 
-    def send_requestVote(self, peer_name, term, candidateID, lastLogIndex, lastLogTerm):
-        d = {"method": "requestVote", "term": term, "candidateID": candidateID,
+
+    def send_requestVote(self, peer_name, term, candidateId, lastLogIndex, lastLogTerm):
+        d = {"method": "requestVote", "term": term, "candidateId": candidateId,
              "lastLogIndex": lastLogIndex, "lastLogTerm": lastLogTerm}
+        print(self.name, "send_requestVote dans mp.py")
         self._sendqs[peer_name].put(d)
 
     def send_requestVoteAck(self, peer_name, term, success, senderID):
         d = {"method" : "requestVoteAck",
              "term": term, "success": success, "senderID": senderID}
+        print("send_requestVoteAck dans mp.py")
         self._sendqs[peer_name].put(d)
 
     def send_appendEntries(self, peer_name, term, leaderId, prevLogIndex, prevLogTerm, entries, leaderCommit):
-        d = {"method": "appendEntries", "term": term, "leaderID": leaderID,
-             "prevLogTerm": prevLogTerm, "prevLogIndex": prevLogIndex,
+        d = {"method": "appendEntries", "term": term, "leaderId": leaderId,
+             "prevLogIndex": prevLogIndex, "prevLogTerm": prevLogTerm,
              "entries": entries, "leaderCommit": leaderCommit}
-        self.sendqs[peer_name].put(d)
+        print(self.name, "send_appendEntries dans mp.py")
+        self._sendqs[peer_name].put(d)
 
-    def send_appendEntriesAck(self, peer_name, term, success, senderID):
+    def send_appendEntriesAck(self, peer_name, term, success, lastIndex, senderID):
         d = {"method" : "appendEntriesAck",
-             "term": term, "success": success, "senderID": senderID}
+             "term": term, "success": success, "lastIndex": lastIndex, 
+             "senderID": senderID}
+        print(self.name, "send_appendEntriesAck dans mp.py")
         self._sendqs[peer_name].put(d)
 
     def send_me_leader(self, name):
@@ -363,6 +380,7 @@ def test_action(expected_actions, action, timestep):
     return False
 
 
+
 if __name__ == '__main__':
     # from multiprocessing import set_start_method
     # set_start_method("spawn")
@@ -376,7 +394,15 @@ if __name__ == '__main__':
     jobs, jobs_queue, control_queue, leader_queue = init_workers(flight_computers, logging_queue)
 
     for j in jobs:
-        j.start()
+    	j.send_add_me(jobs, j.name)
+
+    # test requestVote, il y a des print dans les send, lecture message et fonctyion de server.py
+    # jobs[0].send_requestVote(jobs[1].name, 1, jobs[0].name, 0, 0)
+    jobs[0].send_appendEntries(jobs[1].name, 1, jobs[0].name, 1, 1, 1, 1)
+
+    for j in jobs:
+    	j.start()
+
 
 
     start_time = datetime.now()

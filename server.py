@@ -83,11 +83,12 @@ class ServerLog:
             n += 1
 
 class Server:
-    def __init__(self, name, flight_computer, log):
+    def __init__(self, name, flight_computer, log, isLocal):
         self._thread_lock = threading.Lock()
         self._logging = log
         self.flight_computer = flight_computer
         self.name = name
+        self.isLocal = isLocal
 
         self.currentTerm = 0
         self.votedFor = None
@@ -133,6 +134,7 @@ class Server:
             print("hb of " + self.name + " executed")
             for _, server in self.peers.items():
                 server.appendEntries(self.currentTerm, self.name, None, None, None, self.commitIndex)
+                #self.comm.send_all(appendEntries(self.currentTerm, self.name, None, None, None, self.commitIndex))
     
     def random_timer_init(self):
         #Timeout can't be less than 2 heartbeat periods to avoid too frequent election request simply beacause of packets drop
@@ -164,6 +166,8 @@ class Server:
             self._heartbeat_timer_thread.cancel()
             self._heartbeat_timer_thread.join()
 
+
+
     def set_comm(self, worker):
         self.comm = worker
 
@@ -185,7 +189,6 @@ class Server:
     def decide_on_state(self, state):
         # The client requests the leader to apply RAFT
         # to decide on the give state
-
         state_decided = self.flight_computer.decide_on_state(state)
         self.comm.send_decided_state(state)
 
@@ -411,10 +414,14 @@ class Server:
         self.candidates_update()
         self.leaders_update()
 
-    # CALL
+    #test t-bow
     def requestVote(self, term, candidateId, lastLogIndex, lastLogTerm):
+        print(self.name, "requestVote dans server.py")
         if term < self.currentTerm:
-            self.peers[candidateId].requestVoteAck(self.currentTerm, False, self.name)
+            if self.isLocal:
+                self.peers[candidateId].requestVoteAck(self.currentTerm, False, self.name)
+            else:
+                self.comm.send_requestVoteAck(self.peers[candidateId] , currentTerm, False, self.name)
             return
 
         self.currentTerm = term
@@ -422,20 +429,48 @@ class Server:
         if self.votedFor in (None, candidateId) and \
             lastLogIndex >= self.log.lastIndex():
             self.votedFor = candidateId
-            self.peers[candidateId].requestVoteAck(term, True, self.name)
+            
+            if self.isLocal:
+                self.peers[candidateId].requestVoteAck(term, True, self.name)
+            else:
+                self.comm.send_requestVoteAck(self.peers[candidateId] , term, True, self.name)
             return
 
-        self.peers[candidateId].requestVoteAck(term, False, self.name)
+        if self.isLocal:
+            self.peers[candidateId].requestVoteAck(term, False, self.name)
+        else:
+            self.comm.send_requestVoteAck(self.peers[candidateId], term, False, self.name)
+
+    #Vasco
+    # CALL 
+    # def requestVote(self, term, candidateId, lastLogIndex, lastLogTerm):
+    #     if term < self.currentTerm:
+    #         self.peers[candidateId].requestVoteAck(self.currentTerm, False, self.name)
+
+    #     self.currentTerm = term
+
+    #     if self.votedFor in (None, candidateId) and \
+    #         lastLogIndex >= self.log.lastIndex():
+    #         self.peers[candidateId].requestVoteAck(term, True, self.name)
+
+    #     self.peers[candidateId].requestVoteAck(term, False, self.name)
 
     # CALL
     def requestVoteAck(self, term, success, senderID):
+        print(self.name, "requestVoteAck dans server.py")
         self.ackElec[senderID].term = term
         self.ackElec[senderID].success = success
 
-    # CALL
+
+
     def appendEntries(self, term, leaderId, prevLogIndex, prevLogTerm, entries, leaderCommit):
+        print(self.name, "appendEntries dans server.py")
         if term < self.currentTerm:
-            self.peers[leaderId].appendEntriesAck(self.currentTerm, False, self.log.lastIndex(), self.name)
+            if self.isLocal:
+                self.peers[leaderId].appendEntriesAck(self.currentTerm, False, self.log.lastIndex(), self.name)
+            else:
+                self.comm.send_appendEntriesAck(self.peers[leaderId], self.currentTerm, False, self.log.lastIndex(), self.name)
+
             return
 
         if entries == None:
@@ -451,15 +486,18 @@ class Server:
 
             self.votedFor = None
             
-            self.peers[leaderId].appendEntriesAck(term, True, self.log.lastIndex(), self.name)
+            if self.isLocal:
+                self.peers[leaderId].appendEntriesAck(term, True, self.log.lastIndex(), self.name)
+            else:
+                self.comm.send_appendEntriesAck(self.peers[leaderId], term, True, self.log.lastIndex(), self.name)
             return
 
         if prevLogIndex > self.log.__len__() or (prevLogIndex != 0 and self.log[prevLogIndex].term != prevLogTerm):
-            self.peers[leaderId].appendEntriesAck(term, False, self.log.lastIndex(), self.name)
+            if self.isLocal:
+                self.peers[leaderId].appendEntriesAck(term, False, self.log.lastIndex(), self.name)
+            else:
+                self.comm.send_appendEntriesAck(self.peers[leaderId], term, False, self.log.lastIndex(), self.name)
             return
-
-        #C'est censé déjà être le cas et si ça ne l'est pas, c'est que l'appel est mal formaté
-        #entries = ServerLog(entries)
 
         i = prevLogIndex
         for ndx, _ in enumerate(entries):
@@ -489,17 +527,24 @@ class Server:
 
         self.currentTerm = term
         self.votedFor = None
-        self.peers[leaderId].appendEntriesAck(term, True, self.log.lastIndex(), self.name)
+
+        if self.isLocal:
+            self.peers[leaderId].appendEntriesAck(term, True, self.log.lastIndex(), self.name)
+        else:
+            self.comm.send_appendEntriesAck(self.peers[leaderId], term, True, self.log.lastIndex(), self.name)
 
     # CALL
     def appendEntriesAck(self, term, success, lastIndex, senderID):
+        print(self.name, "appendEntriesAck dans server.py")
         self.ackEntries[senderID].term = term
         self.ackEntries[senderID].success = success
         self.ackEntries[senderID].lastIndex = lastIndex
 
 if __name__ == '__main__':
-    server1 = Server("Serv1", None, None)
-    server2 = Server("Serv2", None, None)
+    isLocal = True  #Mettre True pour tester avec tous les servs en local qui se connaissent, False pour utilisation des pipes
+
+    server1 = Server("Serv1", None, None, isLocal)
+    server2 = Server("Serv2", None, None, isLocal)
 
     server1.add_peer(server2.name, server2)
     server2.add_peer(server1.name, server1)
@@ -518,10 +563,13 @@ if __name__ == '__main__':
                 leader.log.append_entry(LogEntry(action, leader.currentTerm))
 
             if True:
-                print("Server 1's log: ")
+                if server1.log.lastIndex() != 0:
+                    print("Server 1's log: ")
                 server1.print_log()
                 print()
-                print("Server 2's log: ")
+
+                if server2.log.lastIndex() != 0:
+                    print("Server 2's log: ")
                 server2.print_log()
                 print()
 
