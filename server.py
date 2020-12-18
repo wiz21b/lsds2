@@ -82,8 +82,9 @@ class ServerLog:
             yield n, self.data[n-1]
             n += 1
 
+
 class Server:
-    def __init__(self, name, flight_computer, log, isLocal):
+    def __init__(self, name, flight_computer, log, isLocal = False):
         self._thread_lock = threading.Lock()
         self._logging = log
         self.flight_computer = flight_computer
@@ -111,7 +112,7 @@ class Server:
         self.ackEntries = dict()
         self.ackElec = dict()
         self._timer_thread = None
-        
+
         self.heartBeatLen = 5
         self.start_timer(self.random_timer_init())
         self._timeout_expired = False
@@ -128,14 +129,22 @@ class Server:
     def heartbeat_callback(self):
         print("hb of " + self.name + " occured")
         # self._heartbeat_timer_thread.join()
+
+        with self._heartbeat_timer_thread:
+
+            if self.state == "Leader":
+                print("hb of " + self.name + " executed because he is leader")
+
+                if self.isLocal:
+                    for _, server in self.peers.items():
+                        server.appendEntries(self.currentTerm, self.name, None, None, None, self.commitIndex)
+                else:
+                    pass
+                    #self.comm.send_all(appendEntries(self.currentTerm, self.name, None, None, None, self.commitIndex))
+
         self._heartbeat_timer_thread = threading.Timer(self.heartBeatLen, self.heartbeat_callback)
         self._heartbeat_timer_thread.start()
-        if self.state == "Leader":
-            print("hb of " + self.name + " executed because he is leader")
-            for _, server in self.peers.items():
-                server.appendEntries(self.currentTerm, self.name, None, None, None, self.commitIndex)
-                #self.comm.send_all(appendEntries(self.currentTerm, self.name, None, None, None, self.commitIndex))
-    
+
     def random_timer_init(self):
         #Timeout can't be less than 2 heartbeat periods to avoid too frequent election request simply beacause of packets drop
         value = self.heartBeatLen * 2
@@ -302,24 +311,26 @@ class Server:
     def who_is_leader(self):
         if self.state == "Leader":
             return self
-        for _, server in self.peers.items():
-            if server.state == "Leader":
-                return server
+        # for _, server in self.peers.items():
+        #     if server.state == "Leader":
+        #         return server
         return None
 
     def print_log(self):
-        if self.log.lastIndex() == 0:
-            return
 
-        elems = self.log.getItemFrom(1)
         roof = "######################################"
         print(roof)
-        for elem in elems:
-            line = "Action: " + str(elem.command) + " - Term: " + str(elem.term)
-            spacesLen = len(roof) - 2 - len(line)
-            lSpaces = " " * math.floor(spacesLen/2)
-            rSpaces = " " * math.ceil(spacesLen/2)
-            print("#" + lSpaces + line + rSpaces + "#")
+        print(f"{self.name} is a {self.state} ")
+        if self.log.lastIndex() > 0:
+            elems = self.log.getItemFrom(1)
+            for elem in elems:
+                line = "Action: " + str(elem.command) + " - Term: " + str(elem.term)
+                spacesLen = len(roof) - 2 - len(line)
+                lSpaces = " " * math.floor(spacesLen/2)
+                rSpaces = " " * math.ceil(spacesLen/2)
+                print("#" + lSpaces + line + rSpaces + "#")
+        else:
+            print("No log")
         print(roof)
 
     def all_server_update(self):
@@ -404,7 +415,7 @@ class Server:
 
             nLargestIndex = nlargest(math.ceil(len((self.peers) + 1) / 2), self.matchIndex, key=self.matchIndex.get)
             nThLargestIndex = nLargestIndex[len(nLargestIndex)-1]
-            
+
             if self.matchIndex[nThLargestIndex] > self.commitIndex and self.log[self.matchIndex[nThLargestIndex]].term == self.currentTerm:
                 self.commitIndex = self.matchIndex[nThLargestIndex]
 
@@ -429,7 +440,7 @@ class Server:
         if self.votedFor in (None, candidateId) and \
             lastLogIndex >= self.log.lastIndex():
             self.votedFor = candidateId
-            
+
             if self.isLocal:
                 self.peers[candidateId].requestVoteAck(term, True, self.name)
             else:
@@ -442,7 +453,7 @@ class Server:
             self.comm.send_requestVoteAck(self.peers[candidateId], term, False, self.name)
 
     #Vasco
-    # CALL 
+    # CALL
     # def requestVote(self, term, candidateId, lastLogIndex, lastLogTerm):
     #     if term < self.currentTerm:
     #         self.peers[candidateId].requestVoteAck(self.currentTerm, False, self.name)
@@ -475,7 +486,7 @@ class Server:
 
         if entries == None:
             print("The RPC request received was an empty heartbeat")
-            
+
             if leaderCommit > self.commitIndex:
                 self.commitIndex = min(leaderCommit, self.log.lastIndex())
 
@@ -485,7 +496,7 @@ class Server:
             self.currentTerm = term
 
             self.votedFor = None
-            
+
             if self.isLocal:
                 self.peers[leaderId].appendEntriesAck(term, True, self.log.lastIndex(), self.name)
             else:
@@ -543,35 +554,61 @@ class Server:
 if __name__ == '__main__':
     isLocal = True  #Mettre True pour tester avec tous les servs en local qui se connaissent, False pour utilisation des pipes
 
-    server1 = Server("Serv1", None, None, isLocal)
-    server2 = Server("Serv2", None, None, isLocal)
+    nb_servers = 5
+    all_servers = []
+    for i in range(nb_servers):
+        all_servers.append( Server(f"Serv{i+1}", None, None, isLocal))
 
-    server1.add_peer(server2.name, server2)
-    server2.add_peer(server1.name, server1)
+    for server in all_servers:
+        for peer in all_servers:
+            if server != peer:
+                server.add_peer(peer.name, peer)
 
-    i = 0
+
+
     j = 1
     while True:
-        if not i % 1000000: #juste là pour pas trop spam d'update (valeur la plus appropriée pour des tests mais vous pouvez changer)
-            if not j % 10:  #Pour voir où on en est sans pour autant spam la console
-                print(j)
 
-            leader = server1.who_is_leader()
-            if leader is not None and True:                             #add any condition to replace True at which an user input will be sent the the leader 
-                actionID = leader.log.lastIndex()
-                action = "myRdmAction=" + str(actionID)
-                leader.log.append_entry(LogEntry(action, leader.currentTerm))
+        #  Check leader election is OK
 
-            if True:
-                if server1.log.lastIndex() != 0:
-                    print("Server 1's log: ")
-                server1.print_log()
+        # WARNING This is dangerous code:
+        # IF server1 is leader and, while I'm counting the servers,
+        # the server5 becomes the leader, then I will have wrongly
+        # counter sever1 as a leader.
 
-                if server2.log.lastIndex() != 0:
-                    print("Server 2's log: ")
-                server2.print_log()
+        leader = None
+        nb_leaders = 0
+        for s in all_servers:
+            if s.who_is_leader():
+                leader = s
+                nb_leaders += 1
 
-            server1.global_update()
-            server2.global_update()
-            j += 1
-        i += 1
+        if nb_leaders not in (0, 1):
+            print(f"ERROR {nb_leaders} leaders at the same time ?!")
+            for s in all_servers:
+                s.print_log()
+                s.stop() # Clear threads
+
+            exit()
+
+
+        # Show debugging info
+        if j % 1000 == 0:
+            print(j)
+            if leader:                             #add any condition to replace True at which an user input will be sent the the leader
+                with leader._thread_lock:
+                    actionID = leader.log.lastIndex()
+                    action = "myRdmAction=" + str(actionID)
+                    leader.log.append_entry(LogEntry(action, leader.currentTerm))
+
+            for s in all_servers:
+                s.print_log()
+
+            if not leader:
+                print("No leader so far")
+
+        # Make sur the server run
+        for s in all_servers:
+            s.global_update()
+
+        j += 1
