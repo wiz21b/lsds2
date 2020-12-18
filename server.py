@@ -55,7 +55,7 @@ class ServerLog:
 
     def clear_from( self, ndx):
         assert 1 <= ndx <= len(self._data)
-        self.data = self.data[0:ndx-1] #C'est pas un clear to ndx et pas from ndx là ?
+        self.data = self._data[ndx-1:] #C'est pas un clear to ndx et pas from ndx là ?
 
     def has_entry(self, entry):
         for e in self._data:
@@ -130,17 +130,17 @@ class Server:
         print("hb of " + self.name + " occured")
         # self._heartbeat_timer_thread.join()
 
-        with self._heartbeat_timer_thread:
+        #with self._heartbeat_timer_thread:
 
-            if self.state == "Leader":
-                print("hb of " + self.name + " executed because he is leader")
+        if self.state == "Leader":
+            print("hb of " + self.name + " executed because he is leader")
 
-                if self.isLocal:
-                    for _, server in self.peers.items():
-                        server.appendEntries(self.currentTerm, self.name, None, None, None, self.commitIndex)
-                else:
-                    pass
-                    #self.comm.send_all(appendEntries(self.currentTerm, self.name, None, None, None, self.commitIndex))
+            if self.isLocal:
+                for _, server in self.peers.items():
+                    server.appendEntries(self.currentTerm, self.name, None, None, None, self.commitIndex)
+            else:
+                pass
+                #self.comm.send_all(appendEntries(self.currentTerm, self.name, None, None, None, self.commitIndex))
 
         self._heartbeat_timer_thread = threading.Timer(self.heartBeatLen, self.heartbeat_callback)
         self._heartbeat_timer_thread.start()
@@ -150,12 +150,14 @@ class Server:
         value = self.heartBeatLen * 2
         #Add to the prev value a percentage of the time of 2 heartbeat periods
         value += (random.random() * (self.heartBeatLen * 2))
-        print("Timeout de " + str(self.name) + " reset à: " + str(value))
         return value
 
     def start_timer(self, duration):
         if self._timer_thread:
             self._timer_thread.cancel()
+        else:
+            print("Timeout de " + str(self.name) + " reset à: " + str(duration))
+
         self._timer_thread = threading.Timer(duration, self.timeout_callback)
 
         self._timer_thread.start()
@@ -329,8 +331,6 @@ class Server:
                 rSpaces = " " * math.ceil(spacesLen/2)
                 print("#" + lSpaces + line + rSpaces + "#")
             print(roof)
-        else:
-            print("No log")
 
     def all_server_update(self):
         if self.commitIndex > self.lastApplied:
@@ -363,6 +363,7 @@ class Server:
             #Become the new leader
             if nbVotes > (len(self.peers) + 1) / 2:
                 self.state = "Leader"
+                self.votedFor = None
                 self.reset_leader_state()
                 for key, server in self.peers.items():
                     self.nextIndex[key] = self.log.lastIndex() + 1
@@ -370,14 +371,14 @@ class Server:
                     #Leader send heartbeat RPC to all other servers to say he is the new leader
                     server.appendEntries(self.currentTerm, self.name, None, None, None, self.commitIndex)
                 return
-
+            '''
             if self.stepDown == True:
                 self.state = "Follower"
                 self.stepDown = False
                 #reset of random timeout
                 self.start_timer(self.random_timer_init())
                 return
-
+            '''
             if self._timeout_expired == True:
                 self.currentTerm += 1
                 #reset of random timeout
@@ -391,7 +392,14 @@ class Server:
         if self.state == "Leader":
             if self._timeout_expired == True:
                 self._timeout_expired == False
-
+            '''
+            if self.stepDown == True:
+                self.state = "Follower"
+                self.stepDown = False
+                #reset of random timeout
+                self.start_timer(self.random_timer_init())
+                return
+            '''
             for key, server in self.peers.items():
                 if self.log.lastIndex() >= self.nextIndex[key]:
                     entries = self.log.getItemFrom(self.nextIndex[key])
@@ -426,19 +434,24 @@ class Server:
 
     #test t-bow
     def requestVote(self, term, candidateId, lastLogIndex, lastLogTerm):
-        #print(self.name, "requestVote dans server.py")
+        print(self.name, "requestVote dans server.py")
         if term < self.currentTerm:
             if self.isLocal:
+                #print("Vote NOT Granted 1")
                 self.peers[candidateId].requestVoteAck(self.currentTerm, False, self.name)
             else:
                 self.comm.send_requestVoteAck(self.peers[candidateId] , self.currentTerm, False, self.name)
             return
 
-        self.currentTerm = term
+        if self.currentTerm < term: 
+            self.votedFor = None
+            self.currentTerm = term
 
         if self.votedFor in (None, candidateId) and \
             lastLogIndex >= self.log.lastIndex():
+            #print("Vote Granted")
             self.votedFor = candidateId
+            self.state = "Follower"
 
             if self.isLocal:
                 self.peers[candidateId].requestVoteAck(term, True, self.name)
@@ -447,6 +460,7 @@ class Server:
             return
 
         if self.isLocal:
+            #print("Vote NOT Granted 2")
             self.peers[candidateId].requestVoteAck(term, False, self.name)
         else:
             self.comm.send_requestVoteAck(self.peers[candidateId], term, False, self.name)
@@ -484,13 +498,16 @@ class Server:
             return
 
         if entries == None:
-            print("The RPC request received was an empty heartbeat")
+            #print("The RPC request received by " + self.name + " was an empty heartbeat")
 
             if leaderCommit > self.commitIndex:
                 self.commitIndex = min(leaderCommit, self.log.lastIndex())
 
-            if self.state == "Candidate":
-                self.stepDown = True
+            #reset of random timeout
+            self.start_timer(self.random_timer_init())
+
+            if self.state == "Candidate" or self.state == "Leader":
+                self.state = "Follower"
 
             self.currentTerm = term
 
@@ -532,8 +549,11 @@ class Server:
         if leaderCommit > self.commitIndex:
             self.commitIndex = min(leaderCommit, self.log.lastIndex())
 
-        if self.state == "Candidate":
-            self.stepDown = True
+        #reset of random timeout
+        self.start_timer(self.random_timer_init())
+
+        if self.state == "Candidate" or self.state == "Leader":
+            self.state = "Follower"
 
         self.currentTerm = term
         self.votedFor = None
@@ -601,17 +621,18 @@ if __name__ == '__main__':
         # Show debugging info
         if j % 1000 == 0:
             #print(j)
-            if leader:                             #add any condition to replace True at which an user input will be sent the the leader
+            if leader: #add any condition at which an user input will be sent the the leader (c'est peut-être un peu trop de spam là)
                 with leader._thread_lock:
                     actionID = leader.log.lastIndex()
                     action = "myRdmAction=" + str(actionID)
                     leader.log.append_entry(LogEntry(action, leader.currentTerm))
 
-            for s in all_servers:
-                pass #s.print_log()
+            if not j % 500000: #Thibault, ajuste ça à ta guise pour la fréquence d'affichage des log
+                for s in all_servers:
+                    s.print_log()
 
-            if not leader:
-                pass #print("No leader so far")
+            if not leader and not j % 100000: #Ici aussi, juste comme tu le sens
+                print("No leader so far")
 
         # Make sur the server run
         for s in all_servers:
