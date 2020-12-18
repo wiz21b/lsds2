@@ -126,12 +126,12 @@ class Server:
         self._logging.put(f"{datetime.now()} {self.name}: {msg}")
 
     def heartbeat_callback(self):
-        print("hb of " + self.name + " proc")
+        print("hb of " + self.name + " occured")
         # self._heartbeat_timer_thread.join()
         self._heartbeat_timer_thread = threading.Timer(self.heartBeatLen, self.heartbeat_callback)
         self._heartbeat_timer_thread.start()
         if self.state == "Leader":
-            print("hb of " + self.name + " executed")
+            print("hb of " + self.name + " executed because he is leader")
             for _, server in self.peers.items():
                 server.appendEntries(self.currentTerm, self.name, None, None, None, self.commitIndex)
                 #self.comm.send_all(appendEntries(self.currentTerm, self.name, None, None, None, self.commitIndex))
@@ -141,7 +141,7 @@ class Server:
         value = self.heartBeatLen * 2
         #Add to the prev value a percentage of the time of 2 heartbeat periods
         value += (random.random() * (self.heartBeatLen * 2))
-        print(self.name, value)
+        print("Timeout de " + str(self.name) + " reset à: " + str(value))
         return value
 
     def start_timer(self, duration):
@@ -421,7 +421,7 @@ class Server:
             if self.isLocal:
                 self.peers[candidateId].requestVoteAck(self.currentTerm, False, self.name)
             else:
-                self.comm.send_requestVoteAck(self.peers[candidateId] , currentTerm, False, self.name)
+                self.comm.send_requestVoteAck(self.peers[candidateId] , self.currentTerm, False, self.name)
             return
 
         self.currentTerm = term
@@ -552,8 +552,8 @@ if __name__ == '__main__':
     i = 0
     j = 1
     while True:
-        if not i % 1000000:
-            if not j % 10:
+        if not i % 1000000: #juste là pour pas trop spam d'update (valeur la plus appropriée pour des tests mais vous pouvez changer)
+            if not j % 10:  #Pour voir où on en est sans pour autant spam la console
                 print(j)
 
             leader = server1.who_is_leader()
@@ -566,12 +566,10 @@ if __name__ == '__main__':
                 if server1.log.lastIndex() != 0:
                     print("Server 1's log: ")
                 server1.print_log()
-                print()
 
                 if server2.log.lastIndex() != 0:
                     print("Server 2's log: ")
                 server2.print_log()
-                print()
 
             server1.global_update()
             server2.global_update()
